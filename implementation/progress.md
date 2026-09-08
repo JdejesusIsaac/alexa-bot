@@ -20,6 +20,14 @@
 
 ---
 
+## Failed Approaches
+
+> **Generator: read this before writing any code.** Repeating a documented failure is a rubric penalty. Max 10 lines — one line per failure, cause first, not narrative. Survives context resets and sprint restarts; append on failure, never clear.
+
+*(none yet — Sprint 1 has not begun implementation)*
+
+---
+
 ## Task board
 
 | ID | Task | Status | Notes |
@@ -72,6 +80,23 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 ```
 
 ---
+
+### Session 5 — harness restructure + Sprint Contract
+**Worked on:** repo structure, `planning/plan.md` (Sprint Contract), `implementation/progress.md`
+**Done:**
+- Moved the four artifacts out of `sprint-1/` to the paths AGENTS.md routes on: `research/research.md`, `planning/plan.md`, `implementation/progress.md`, `evaluation/test.md`. Removed `sprint-1/`. Updated all cross-references.
+- Git repo initialized (it did not previously exist), initial commit, pushed to `origin/main`.
+- Wrote the **Sprint Contract** into `planning/plan.md` — rubric Auth&Security 50 / Functionality 30 / Design 10 / Originality 10, every test mapped to a requirement, 8 hard-fail gates, ≥90% pass threshold.
+- Added the **Failed Approaches** section, previously missing.
+**Decisions made:**
+- Single canonical artifact location; `sprint-1/` dropped rather than kept as a snapshot, to avoid two drifting copies.
+- Sprint Contract is marked **provisional until PL-013 closes**, per the spike-gate rule.
+**Surprises:**
+- **`artifact-budget-guard.py` keys on the four routed paths.** While the artifacts lived in `sprint-1/` the budget hook matched nothing and silently passed on every write — the guard was installed but inert. The restructure is what switched it on.
+- **12 of 21 tests were never cited by any task AC** (T-03, T-06…T-08, T-10…T-17). The Sprint Contract now provides that traceability.
+- Repo had no `.git` at all despite being believed initialized.
+**Open:** four audit findings pending decision — see below. Open question 9 (which AS) still unresolved, routed into PL-013.
+**Next action:** resolve the four audit findings, then run **PL-013** (timeboxed 1 day, throwaway), then **PL-001**.
 
 ### Session 4 — final sprint optimization
 **Worked on:** `planning/plan.md` → rev 2, `evaluation/test.md` T-21, `implementation/progress.md`

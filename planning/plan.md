@@ -202,3 +202,90 @@ Two options: run Parent Line **as** the CCAR-P capstone ("Atlas") — the certif
 **Parent verification (Sprint 3).** Method undecided (Q6). Alexa+ doesn't support OAuth Step-Up, so tiering lives in our own session state (§3c). Design in Sprint 2.
 **Academic redo.** No data source exists (§2e F-2). Blocked on Q10.
 **Anything voice (Sprint 3+).** Three gates in §6, including Amazon's unpublished security policies.
+
+---
+
+# Sprint Contract
+
+> **This section plus `evaluation/test.md` is the entire input to the Evaluator.** Per Harness rule 1 the Evaluator does not read `implementation/progress.md` and does not read the Generator's reasoning. If a requirement is not written here or in a test, it cannot be graded — and will not be.
+>
+> **Status: provisional until PL-013 closes.** `planning/AGENTS.md` forbids planning against unresolved spikes. PL-013's findings shape Sprint 2's transport and auth, not Sprint 1's deterministic core, so Sprint 1 is gradeable as written. Re-gate this contract if PL-013 returns a "no."
+
+## Rubric weights
+
+Weights follow the security-critical default in `planning/AGENTS.md`. This project's dominant failure mode is disclosure, not missing features, so Auth & Security outweighs Functionality.
+
+| Criterion | Weight | Graded against |
+|---|---|---|
+| **Auth & Security** | **50%** | T-01…T-05, T-09, T-10, T-19, T-20, T-21 |
+| Functionality | 30% | T-06…T-08, T-11…T-18 |
+| Design | 10% | PL-003, PL-004, PL-012 structural ACs |
+| Originality | 10% | PL-012 derivation-as-config; PL-009 typed-refusal model |
+
+## Criterion detail
+
+### Auth & Security — 50%
+
+| # | Requirement | Evidence |
+|---|---|---|
+| S-1 | RLS enabled **and forced**; app role is neither superuser nor table owner | T-05 |
+| S-2 | Reads scope to the active tenant with no `where` clause present | T-01 |
+| S-3 | Absent tenant context errors or returns zero rows — never all rows | T-02 |
+| S-4 | Colliding names across tenants never cross | T-03 |
+| S-5 | Pooled connections do not retain `app.tenant_id` | T-04 |
+| S-6 | Zero student identifiers in any log line, including error paths; `tenant_id` on every line | T-09 |
+| S-7 | `audit_log` rejects `update`/`delete` at the database grant level, not in application code | T-10 |
+| S-8 | Advisor-notes content is absent from every canonical row, response, and log | T-19 |
+| S-9 | `do_not_call` survives ingestion and is queryable | T-20 |
+| S-10 | Derived holds carry `hold_source` and are blocked on parent-facing paths | T-21 |
+
+### Functionality — 30%
+
+| # | Requirement | Evidence |
+|---|---|---|
+| F-1 | Dirty rows quarantine individually; a partial sync is a success, not a failure | T-06 |
+| F-2 | Quarantined rows are unreachable from status lookup | T-07 |
+| F-3 | Divergent tenant headers produce identical canonical rows | T-08 |
+| F-4 | Sync is idempotent | T-11 |
+| F-5 | Staleness guard refuses stale rosters distinguishably | T-12 |
+| F-6 | Upstream failure leaves the prior roster intact; freshness counts from last *successful* sync | T-13 |
+| F-7 | Happy path returns correct status with an audit entry | T-14 |
+| F-8 | All four refusals are distinct typed results; none is an empty success | T-15 |
+| F-9 | Every call — success or refusal — writes exactly one audit entry | T-16 |
+| F-10 | Migrations run clean from empty, suite green | T-17 |
+| F-11 | `getScholarStatus` p95 ≤150 ms | T-18 |
+
+### Design — 10%
+
+Repository layer makes an untenanted query unwriteable (PL-003); column mapping is explicit config with no inference (PL-004); hold derivation is per-tenant config, not branching logic (PL-012).
+
+### Originality — 10%
+
+Credit for: `hold_source` as a first-class provenance field rather than a boolean; the four-way typed refusal model that makes "degrade to human" structural rather than conventional.
+
+## Hard-fail conditions
+
+**Any one of these fails the sprint outright, regardless of weighted score.** These are not scored criteria — they are gates.
+
+1. Any of T-01…T-05 failing or unwritten. *(The isolation gate, per `evaluation/test.md`.)*
+2. Real student data anywhere in the repo or its history — names, IDs, guardian names, exports, `.csv`/`.xlsx`.
+3. `tenant_id` accepted as an argument in any exported signature outside the auth layer. *(Rule 7.)*
+4. Any `pool.query` outside `src/repositories/`. *(Rule 11.)*
+5. A derived hold reachable on a parent-facing path. *(Rule 9.)*
+6. Advisor-notes content in a canonical row, response, or log. *(Rule 8.)*
+7. Any failure path returning an empty success instead of a typed refusal. *(Rule 10.)*
+8. An LLM call inside a tool's request path. *(§3a — the 500 ms ceiling.)*
+
+## Exit criteria
+
+Restated verbatim from the sprint header so the two cannot drift:
+
+1. `getScholarStatus` correct for 10 consecutive business days against a synthetic mirror of the real sheet
+2. Zero cross-tenant leakage across the full suite
+3. p95 latency ≤150 ms
+4. Zero student PII in logs; every read audited
+5. The MCP spike (PL-013) has returned a written go/no-go on transport and auth
+
+## Scoring
+
+Each requirement is pass/fail. A criterion's score is its passed requirements over its total, times its weight. **Sprint passes at ≥90% weighted with zero hard-fails** — the threshold is high because the floor is a child's disciplinary record spoken to the wrong adult.
