@@ -12,6 +12,16 @@
 
 **Next action:** **PL-002 — schema + RLS.** Write `src/db/migrations/0001_*.sql` creating the nine tables with `tenant_id uuid not null`, RLS **enabled AND forced**, and a non-owner `parentline_app` role. Then T-05 first (as a blocking precondition), then T-01…T-04.
 
+**Task order** (derived from the `planning/plan.md` DAG — follow this unless a dependency changes):
+
+```
+PL-001 ✅ → PL-002 → PL-003 → PL-004 → PL-011 → PL-012 → PL-008 → PL-010 → PL-005 → PL-006 → PL-007 → PL-009
+                     └─ PL-002 + PL-003 gate everything; do not start others before both are done
+                        PL-009 is last: it needs PL-007 + PL-008 + PL-012
+                        PL-005 is BLOCKED on Google Sheets OAuth creds + a test sheet
+                        PL-013 ✅ partial (throwaway spike, runs independently)
+```
+
 **Blocked on:** nothing for PL-001–PL-004. **Resolved:** the container-runtime blocker is gone — AD-11 replaces Testcontainers with a real local Postgres (16.14 already running) and a database-per-run, with T-05 promoted to a blocking precondition because a dev superuser silently bypasses RLS. PL-005 still needs Google Sheets OAuth credentials and a test sheet. Open question 9 (authorization server) is Sprint 2, not this sprint.
 
 **Soak status:** not started · 0 / 10 business days
