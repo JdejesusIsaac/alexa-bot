@@ -100,6 +100,16 @@ export default [
     },
   },
 
+  // Seed script — same role as the migration runner: schema/seed tooling
+  // that needs raw SQL to insert fixture data across tenants. Scoped to
+  // this single file. Rule 7 still applies.
+  {
+    files: ['src/db/seed.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...NO_TENANT_PARAM],
+    },
+  },
+
   // Test harness needs raw SQL to assert database-level behavior
   // (RLS policies, FORCE ROW LEVEL SECURITY, grants). That is the point
   // of T-01..T-05 and T-10 — they must bypass the repository layer to be
@@ -108,6 +118,41 @@ export default [
     files: ['tests/**/*.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...NO_TENANT_PARAM],
+    },
+  },
+
+  // Sync scheduler — background-job infrastructure that establishes
+  // tenant context from configuration, not from a request. The
+  // `tenantId` in `SyncJob` comes from config, not from a caller-
+  // supplied argument. Same role as `src/db/tenant-context.ts`.
+  // Rule 11 still applies — all queries go through repositories.
+  {
+    files: ['src/sync/scheduler.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', NO_RAW_QUERY],
+    },
+  },
+
+  // Tenant context infrastructure — the single point where the
+  // session-derived tenant ID enters the database. Needs both Rule 7
+  // (tenantId as parameter) and Rule 11 (raw query to call set_config),
+  // for the same reason the auth layer needs Rule 7 and the migration
+  // runner needs Rule 11. Scoped to this one file.
+  {
+    files: ['src/db/tenant-context.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+
+  // Test DB helper establishes tenant context and runs raw SQL to provision
+  // databases and apply migrations — the same roles as the auth layer and
+  // the migration runner combined. Both Rule 7 and Rule 11 are exempt here;
+  // this is test infrastructure, not application code.
+  {
+    files: ['tests/helpers/db.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
 ];

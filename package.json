@@ -17,9 +17,11 @@
     "test:watch": "vitest",
     "test:isolation": "vitest run tests/isolation",
     "migrate": "tsx src/db/migrate.ts",
+    "seed": "tsx src/db/seed.ts",
     "verify": "npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {
+    "googleapis": "^144.0.0",
     "pg": "^8.13.1",
     "zod": "^3.24.1"
   },

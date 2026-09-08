@@ -30,7 +30,7 @@ Seed roster entries for A and B. Set `app.tenant_id` to A. `select * from roster
 
 ### T-02 · Unset tenant context does not return everything
 Acquire a connection without setting `app.tenant_id`. Query `roster_entries`.
-**Pass:** query errors or returns zero rows. **Fail (critical):** returns all tenants' rows. *The failure mode this catches is a policy written against a nullable setting.*
+**Pass:** query errors — the RLS policy uses `current_setting('app.tenant_id')::uuid` with no `missing_ok`, so an unset session variable raises an error rather than silently returning zero rows. **Fail (critical):** returns all tenants' rows, or silently returns zero rows (silent filtering could mask a context bug).
 
 ### T-03 · Name collision does not cross tenants
 A and B each have a "Daniel Reyes" with different statuses. Look up "Daniel Reyes" under tenant A.
@@ -38,7 +38,7 @@ A and B each have a "Daniel Reyes" with different statuses. Look up "Daniel Reye
 
 ### T-04 · Pool does not leak tenant context
 Run `withTenant(A, …)`, release the connection, then acquire a connection and query **without** setting a tenant.
-**Pass:** behaves as T-02 — no rows. **Fail (critical):** A's rows, because `app.tenant_id` survived in the pooled connection.
+**Pass:** behaves as T-02 — query errors (no tenant context set). **Fail (critical):** A's rows, because `app.tenant_id` survived in the pooled connection.
 
 ### T-05 · Application role cannot bypass RLS — **runs first, aborts the run on failure**
 Assert the connected role is not superuser, does not own the RLS tables, and that `FORCE ROW LEVEL SECURITY` is set on each.
@@ -112,7 +112,7 @@ Fresh database, run all migrations, then the full suite.
 
 ### T-18 · `getScholarStatus` holds the latency budget
 *(Added after the Alexa+ MCP review — see `research/research.md` §3a.)* Warm pool, seeded roster at realistic size, 200 sequential calls.
-**Pass:** p95 comfortably under 500 ms — target ≤150 ms, leaving headroom for transport, auth, and network in Sprint 2.
+**Pass:** p95 ≤150 ms, leaving headroom for transport, auth, and network in Sprint 2.
 **Fail:** at or near 500 ms. Alexa+ enforces the ceiling on the *entire* round trip, so the database read must be a fraction of it.
 
 ---
@@ -129,7 +129,7 @@ Fresh database, run all migrations, then the full suite.
 
 ### T-21 · Derived holds are marked and never parent-facing
 *(Added in plan rev 2 — see PL-012 and `research/research.md` §2e F-2.)* Seed a scholar whose detention is *derived* (Tardy or Missing ID) with no authoritative hold column, and a second whose hold is authoritative.
-**Pass:** both carry a correct `hold_source` (`derived` / `authoritative`); the derived one is retrievable on the staff path and **blocked on any parent-facing path**.
+**Pass:** both carry a correct `hold_source` (`derived` / `authoritative`); the derived one is retrievable on the staff path and **blocked on any parent-facing path** — `hold_source` is omitted entirely from the parent-facing response when a derived hold is blocked, not set to a false value.
 **Fail (critical):** a derived hold is indistinguishable from an authoritative one. Staff may have waived the detention — telling a parent their child is being held, on an inference, is the exact failure this project exists to avoid.
 
 ---

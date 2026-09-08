@@ -32,6 +32,12 @@ const schema = z.object({
   ROSTER_FRESHNESS_MINUTES: z.coerce.number().int().positive().default(45),
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  /** Google service account JSON for the Sheets connector (PL-005). Optional — connector is dormant until provided. */
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+
+  /** Default roster sheet ID for scheduled sync (PL-007). Optional until sheets are configured. */
+  ROSTER_SHEET_ID: z.string().optional(),
 });
 
 export type Config = Readonly<{
@@ -40,6 +46,8 @@ export type Config = Readonly<{
   appDatabaseUrl: string;
   rosterFreshnessMinutes: number;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
+  googleServiceAccountJson: string | undefined;
+  rosterSheetId: string | undefined;
 }>;
 
 export class ConfigError extends Error {
@@ -72,5 +80,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appDatabaseUrl: raw.APP_DATABASE_URL ?? raw.DATABASE_URL,
     rosterFreshnessMinutes: raw.ROSTER_FRESHNESS_MINUTES,
     logLevel: raw.LOG_LEVEL,
+    googleServiceAccountJson: raw.GOOGLE_SERVICE_ACCOUNT_JSON,
+    rosterSheetId: raw.ROSTER_SHEET_ID,
   });
 }
