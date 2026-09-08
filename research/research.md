@@ -208,6 +208,10 @@ The QuickStart states security and data policy details "will be published in a f
 
 **AD-10 (new) — The 401 response varies by client, deliberately.** Proven by PL-013: the MCP spec makes `WWW-Authenticate` on 401 a MUST, Alexa+ requires it absent, and no fixed response satisfies both. The auth layer branches. Collapsing it to one shape breaks a client. See Spike Results.
 
+**AD-11 (new) — Real Postgres, but not necessarily Testcontainers.** The requirement is a real database where we control role and table ownership — not a container runtime. Tests provision a uniquely-named database per run against any reachable Postgres 15+, creating a migration/owner role and a separate **non-owner, non-superuser** app role. CI pins the version via GitHub Actions `services:`, which the runner manages.
+
+The hazard this must not lose: **superusers bypass RLS silently.** A local dev role is usually a superuser, so a suite that connects as one turns T-01…T-04 green while production leaks — the exact failure `evaluation/test.md` warns about. **T-05 is therefore a blocking precondition, not merely a test:** if the app role is superuser, owns the tables, or lacks `FORCE ROW LEVEL SECURITY`, the run aborts before any other isolation test is trusted. Testcontainers remains a drop-in later if hermeticity or parallelism demands it; it buys isolation, not correctness.
+
 ---
 
 ## 5. Stack (assumed — confirm before PL-001)
@@ -219,7 +223,7 @@ The QuickStart states security and data policy details "will be published in a f
 | DB | PostgreSQL 15+ | RLS is the isolation mechanism |
 | DB access | Drizzle + explicit SQL migrations | ORMs that hide session handling fight RLS |
 | Validation | Zod | Schema at the boundary |
-| Testing | Vitest + Testcontainers | RLS cannot be tested against a mock |
+| Testing | Vitest + **real local Postgres** (database-per-run) | RLS cannot be tested against a mock. Testcontainers was the original pick; **revised — see AD-11** |
 | Auth | OAuth 2.1 AS with PKCE/S256, static client registration | DCR unsupported — clients pre-provisioned |
 | Scheduler | node-cron in-process (Sprint 1) | Move to a queue at the second campus |
 

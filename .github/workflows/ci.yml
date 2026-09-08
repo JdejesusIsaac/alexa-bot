@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · lint · test · migrations
+    runs-on: ubuntu-latest
+
+    # Postgres pinned here rather than via Testcontainers (AD-11). The runner
+    # manages the container, so no Docker is required in our code or on a
+    # developer machine.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: parentline_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/parentline_ci
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # FERPA guard. A .csv or .xlsx reaching the repo is a hard-fail
+      # condition in the Sprint Contract, and history is forever. Checked
+      # before anything else so a bad commit fails loudly and early.
+      - name: No student-data file types in tree
+        run: |
+          found=$(git ls-files '*.csv' '*.xlsx' '*.xls' 'fixtures/real/*')
+          if [ -n "$found" ]; then
+            echo "::error::forbidden data files committed:"
+            echo "$found"
+            exit 1
+          fi
+          echo "clean — no csv/xlsx/xls tracked"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Migrations run clean from empty
+        run: npm run migrate
+
+      # Isolation tests are the gate. Run them on their own first so a
+      # failure is unmistakable in the log rather than buried mid-suite.
+      - name: Isolation gate (T-01…T-05)
+        run: npm run test:isolation
+
+      - name: Full suite
+        run: npm test
+
+  hooks:
+    name: harness hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke-test the guard hooks
+        run: bash .windsurf/verify-hooks.sh

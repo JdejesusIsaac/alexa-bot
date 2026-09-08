@@ -64,7 +64,7 @@ Voice / Alexa runtime · Claude or any LLM call · **the production MCP server**
 Dependencies in brackets. PL-002 and PL-003 gate everything.
 
 ### PL-001 — Repo scaffold + CI
-TypeScript, Node 20, strict mode. Vitest, ESLint, Prettier. GitHub Actions: typecheck → lint → test → migrations. `.gitignore` covers `.env`, `*.csv`, `*.xlsx`, `/fixtures/real/`.
+TypeScript, Node 20, strict mode. Vitest, ESLint, Prettier. GitHub Actions: typecheck → lint → test → migrations, with a **Postgres 16 `services:` container** pinning the DB version (per AD-11 — no Testcontainers, no Docker required locally). `.gitignore` covers `.env`, `*.csv`, `*.xlsx`, `/fixtures/real/`.
 **AC:** `npm run verify` green on a clean clone. CI blocks merge on failure.
 
 ### PL-002 — Schema + RLS [PL-001]

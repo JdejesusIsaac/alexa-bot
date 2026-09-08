@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+
+# Throwaway spike — deleted at sprint end, not worth formatting churn.
+spike/
+
+# Harness artifacts are hand-authored prose with deliberate table alignment
+# and layout. Prettier reflows them into noisy diffs that bury real edits,
+# and these four files are the project's durable memory — their diffs need
+# to stay readable.
+research/research.md
+planning/plan.md
+implementation/progress.md
+evaluation/test.md
+AGENTS.md
+*/AGENTS.md
+README.md
+.windsurf/

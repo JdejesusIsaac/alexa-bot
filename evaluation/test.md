@@ -6,9 +6,13 @@
 
 ## Strategy
 
-**Real Postgres, not a mock.** Row-level security is a database behavior. A mocked query layer will pass every isolation test while the real system leaks. Use Testcontainers; accept the slower suite.
+**Real Postgres, not a mock.** Row-level security is a database behavior. A mocked query layer will pass every isolation test while the real system leaks.
 
-**The application role must not own the tables.** Table owners and superusers bypass RLS silently. If tests run as the owner, T-01 passes and production leaks. Verify the role explicitly in T-05.
+**A real database, not necessarily a container** *(revised — see `research/research.md` AD-11)*. The suite provisions a uniquely-named database per run against any reachable Postgres 15+, applies migrations as an owner role, and connects as a separate **non-owner, non-superuser** app role. Testcontainers is a valid drop-in but is not required; it buys hermeticity and parallelism, not correctness.
+
+**The application role must not own the tables.** Table owners and superusers bypass RLS silently. If tests run as the owner, T-01 passes and production leaks.
+
+**T-05 is a blocking precondition, not just a test.** It runs first. If the app role is superuser, owns the RLS tables, or any table lacks `FORCE ROW LEVEL SECURITY`, the run **aborts** and no other isolation result is reported as trustworthy. This matters more on a local Postgres than in a container, because a developer's default role is typically a superuser — the suite must refuse to run as one rather than pass vacuously.
 
 **Two tenants in every fixture, with colliding student names.** Campus A and Campus B both have a "Daniel Reyes." If a query forgets its tenant filter, a single-tenant fixture returns plausible-looking correct data and the bug ships. Name collision is what makes the leak visible.
 
@@ -36,9 +40,9 @@ A and B each have a "Daniel Reyes" with different statuses. Look up "Daniel Reye
 Run `withTenant(A, …)`, release the connection, then acquire a connection and query **without** setting a tenant.
 **Pass:** behaves as T-02 — no rows. **Fail (critical):** A's rows, because `app.tenant_id` survived in the pooled connection.
 
-### T-05 · Application role cannot bypass RLS
+### T-05 · Application role cannot bypass RLS — **runs first, aborts the run on failure**
 Assert the connected role is not superuser, does not own the RLS tables, and that `FORCE ROW LEVEL SECURITY` is set on each.
-**Pass:** all assertions hold. **Fail (critical):** every other isolation test is meaningless.
+**Pass:** all assertions hold. **Fail (critical):** abort immediately — every other isolation test is meaningless, and reporting them as green is worse than reporting nothing.
 
 ---
 
@@ -147,10 +151,14 @@ The scheduled sync (PL-007) is a background job that writes student data with no
 ## Running
 
 ```bash
-npm run test              # full suite (Testcontainers Postgres)
+npm run test              # full suite (real Postgres, database-per-run)
 npm run test:isolation    # T-01..T-05 only — run before every commit
 npm run verify            # typecheck + lint + test — CI gate
 ```
+
+Requires a reachable Postgres 15+ and a role that may create databases and roles.
+Set `DATABASE_URL` (admin connection); the suite derives the per-run database and
+the non-owner app role from it. CI pins the version via GitHub Actions `services:`.
 
 CI blocks merge on any failure. **Any isolation failure is a stop-the-line event**, not a ticket.
 

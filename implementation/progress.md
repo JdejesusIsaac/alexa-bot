@@ -4,15 +4,15 @@
 
 **Sprint:** 1 — Parent Line Core
 **Started:** _(fill in)_
-**Status:** 🟡 Not started
+**Status:** 🟡 In progress — PL-001 done, PL-002 next
 
 ---
 
 ## Current state
 
-**Next action:** **Install a container runtime** (Docker Desktop / OrbStack / Colima) — without it the isolation gate cannot run and PL-002 onward is unverifiable. Then confirm the authorization server (open question 9) and begin **PL-001**. PL-013 is partially closed; its remaining two steps need cloud credentials.
+**Next action:** **PL-002 — schema + RLS.** Write `src/db/migrations/0001_*.sql` creating the nine tables with `tenant_id uuid not null`, RLS **enabled AND forced**, and a non-owner `parentline_app` role. Then T-05 first (as a blocking precondition), then T-01…T-04.
 
-**Blocked on:** **🔴 no container runtime installed.** Docker/Podman/OrbStack/Colima are all absent, so Testcontainers cannot run — and `evaluation/test.md` mandates real Postgres over a mock because RLS is a database behavior. This blocks the **isolation gate T-01…T-05**, which is hard-fail condition #1 in the Sprint Contract. PL-001 can proceed; PL-002 onward cannot be verified without it. Local `psql` 16.14 exists as a fallback if we amend the testing strategy.
+**Blocked on:** nothing for PL-001–PL-004. **Resolved:** the container-runtime blocker is gone — AD-11 replaces Testcontainers with a real local Postgres (16.14 already running) and a database-per-run, with T-05 promoted to a blocking precondition because a dev superuser silently bypasses RLS. PL-005 still needs Google Sheets OAuth credentials and a test sheet. Open question 9 (authorization server) is Sprint 2, not this sprint.
 
 **Soak status:** not started · 0 / 10 business days
 
@@ -32,7 +32,7 @@
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| PL-001 | Repo scaffold + CI | ⬜ Not started | |
+| PL-001 | Repo scaffold + CI | ✅ Done | `npm run verify` green; rule 7 + rule 11 lint guards verified firing; 0 npm vulns |
 | PL-002 | Schema + RLS | ⬜ Not started | Gates everything |
 | PL-003 | Tenant context + repository layer | ⬜ Not started | Gates everything |
 | PL-004 | Canonical schema + column mapping | ⬜ Not started | |
@@ -82,6 +82,23 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 ```
 
 ---
+
+### Session 7 — PL-001 scaffold + CI
+**Worked on:** PL-001, stack amendment (AD-11)
+**Done:**
+- Amended §5 stack table and `evaluation/test.md` strategy: **Testcontainers → real local Postgres, database-per-run**. Docker is no longer required. T-05 promoted to a **blocking precondition** that aborts the run.
+- Scaffolded: `package.json`, `tsconfig.json` (strict + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`), `eslint.config.js`, `vitest.config.ts`, `.prettierrc.json`, `.env.example`, `README.md`, `.github/workflows/ci.yml` with a Postgres 16 `services:` container.
+- `src/config.ts` — Zod-validated env with **two** database URLs (owner vs non-owner app role); `APP_DATABASE_URL` is mandatory in production. 9 tests, all passing.
+- `src/db/migrate.ts` — transactional migration runner, idempotent, verified against local `parentline_dev`.
+- `npm run verify` green. `npm audit` **0 vulnerabilities**.
+**Decisions made:**
+- **Rules 7 and 11 are now lint-enforced, not conventions.** `no-restricted-syntax` blocks `.query(` outside `src/repositories/` and blocks `tenantId`/`tenant_id` in exported signatures outside `src/auth/`. **Verified firing** with throwaway probe files: `src/services/` → both errors; `src/repositories/` → query allowed, tenant param still blocked.
+- Rule 11 exception is scoped to the single file `src/db/migrate.ts`, not `src/db/**` — a directory-wide exception would be a loophole big enough to park application queries in.
+- `vitest.config.ts` sets `fileParallelism: false` and `bail: 1` — parallel files would race on per-run database/role creation, and bail stops a vacuous green after the T-05 precondition fails.
+**Surprises:**
+- Initial install carried a **critical** advisory (`@vitest/mocker` arbitrary file read/execute) plus a high in `vite`. Both dev-only and gated on the Vitest UI server, which we don't run — but bumping vitest 2.1.9 → 3.2.x cleared all 5 to zero. Worth doing on a project handling student records rather than carrying a known critical.
+- CI needed `npm run migrate` to exist, which pulled a minimal migration runner into PL-001 slightly ahead of PL-002.
+**Next action:** PL-002 — schema + RLS, then the isolation gate.
 
 ### Session 6 — PL-013 spike
 **Worked on:** PL-013, `research/research.md` → rev 5
