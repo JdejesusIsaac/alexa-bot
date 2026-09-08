@@ -10,13 +10,13 @@
 
 ## Current state
 
-**Next action:** Confirm stack + authorization server (`research/research.md` §5, open question 9), then begin **PL-001**. Start **PL-013** early in week 1 — its findings are worth most while there's still time to act on them.
+**Next action:** **Install a container runtime** (Docker Desktop / OrbStack / Colima) — without it the isolation gate cannot run and PL-002 onward is unverifiable. Then confirm the authorization server (open question 9) and begin **PL-001**. PL-013 is partially closed; its remaining two steps need cloud credentials.
 
-**Blocked on:** nothing (Sprint 1 is deliberately unblocked — the legal question gates voice work, not this sprint)
+**Blocked on:** **🔴 no container runtime installed.** Docker/Podman/OrbStack/Colima are all absent, so Testcontainers cannot run — and `evaluation/test.md` mandates real Postgres over a mock because RLS is a database behavior. This blocks the **isolation gate T-01…T-05**, which is hard-fail condition #1 in the Sprint Contract. PL-001 can proceed; PL-002 onward cannot be verified without it. Local `psql` 16.14 exists as a fallback if we amend the testing strategy.
 
 **Soak status:** not started · 0 / 10 business days
 
-**Exit criteria:** ⬜ 10-day soak · ⬜ zero cross-tenant leakage · ⬜ p95 ≤150 ms · ⬜ zero PII in logs · ⬜ PL-013 go/no-go written
+**Exit criteria:** ⬜ 10-day soak · ⬜ zero cross-tenant leakage · ⬜ p95 ≤150 ms · ⬜ zero PII in logs · 🟡 PL-013 go/no-go **partially** written (Q1 answered; Q2/Q3 blocked on credentials)
 
 ---
 
@@ -44,7 +44,7 @@
 | PL-010 | Structured logging | ⬜ Not started | |
 | PL-011 | Synthetic fixtures, two tenants | ⬜ Not started | Colliding names across tenants |
 | PL-012 | Hold derivation as config | ⬜ Not started | Detention derived; `hold_source` flag |
-| PL-013 | MCP transport + auth spike | ⬜ Not started | ⏱️ 1 day, throwaway. Run early week 1 |
+| PL-013 | MCP transport + auth spike | 🟡 Partial | 3/5 steps closed. Q1 answered: **no** single 401 shape works → AD-10. Steps 2 & 5 blocked on credentials |
 
 **Legend:** ⬜ Not started · 🟡 In progress · ✅ Done · 🔴 Blocked · ⏸️ Paused
 
@@ -82,6 +82,18 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 ```
 
 ---
+
+### Session 6 — PL-013 spike
+**Worked on:** PL-013, `research/research.md` → rev 5
+**Done:** Built the throwaway walking skeleton in `spike/pl-013-mcp-auth/` — plain `node:http`, no SDK needed, no database, no student data. Streamable HTTP MCP with a no-argument `whoami` tool, PRM document (RFC 9728), AS metadata, and a configurable 401 shape. 13/13 characterization assertions pass under the client-varying strategy.
+**Decisions made:**
+- **AD-10 — the 401 response varies by client, deliberately.** Q1 is answered **no**: the MCP spec makes `WWW-Authenticate` a MUST on 401, Alexa+ requires it absent, and I proved both fixed strategies fail the other client (`spec` → 1 failure on the Alexa+ profile; `alexa` → 2 failures on the spec profile). Only per-client variance passes. Sprint 2 either sniffs the client or serves two endpoints; the two-endpoint option is probably sounder.
+**Surprises:**
+- The conflict is **spec-level MUST vs. platform requirement**, not a preference mismatch as rev 3 implied. There is no clever single-shape answer to find — worth knowing before Sprint 2 built an auth layer around one.
+- No SDK dependency was needed at all to answer the questions; the spike installs nothing.
+- **No private distribution path exists for Alexa+ *add-ons*.** What turned up is the older Alexa for Business private-skill model and Alexa Smart Properties — both adjacent, neither confirmed to intersect the add-on track. Gate 3 stays closed.
+**Blocked:** Q2 (which AS) needs a Cognito/Auth0/Okta account. Q3 needs an Amazon developer account. Both are credential blockers, not technical ones.
+**Next action:** install a container runtime, then PL-001.
 
 ### Session 5 — harness restructure + Sprint Contract
 **Worked on:** repo structure, `planning/plan.md` (Sprint Contract), `implementation/progress.md`

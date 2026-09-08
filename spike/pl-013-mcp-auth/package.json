@@ -1,0 +1,16 @@
+{
+  "name": "pl-013-mcp-auth-spike",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY PL-013 spike. Streamable HTTP MCP + OAuth 401 shape characterization. Delete at sprint end.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "spike:serve": "node server.mjs",
+    "spike:test": "node test-401.mjs",
+    "spike:serve:spec": "FOUR01_STRATEGY=spec node server.mjs",
+    "spike:serve:alexa": "FOUR01_STRATEGY=alexa node server.mjs"
+  }
+}

@@ -4,7 +4,7 @@
 
 **Project:** Parent Line — voice-first parent support agent for a K-12 charter network
 **Sprint 1 scope:** deterministic core only. No voice, no LLM, no MCP.
-**Last updated:** Sprint 1, Day 0 — rev 4. **Alexa+ MCP Toolkit review (§2c) superseded several earlier decisions; §2d surveys reference implementations; §2e records the source-data schema.**
+**Last updated:** Sprint 1, Day 1 — rev 5. **PL-013 spike closed 3 of 5 steps: the 401 divergence has no single-shape solution (AD-10). See Spike Results.**
 
 ---
 
@@ -206,6 +206,8 @@ The QuickStart states security and data policy details "will be published in a f
 
 **AD-9 (new) — Tool definitions are a deploy-gated versioned interface.** Alexa+ caches tool info until redeploy. Changing a tool schema is a release event with a changelog, not a refactor.
 
+**AD-10 (new) — The 401 response varies by client, deliberately.** Proven by PL-013: the MCP spec makes `WWW-Authenticate` on 401 a MUST, Alexa+ requires it absent, and no fixed response satisfies both. The auth layer branches. Collapsing it to one shape breaks a client. See Spike Results.
+
 ---
 
 ## 5. Stack (assumed — confirm before PL-001)
@@ -272,6 +274,60 @@ Vectors 2 and 3 had **no test** until the Sprint 1 structure audit; T-22 and T-2
 
 ---
 
+## Spike Results
+
+### PL-013 — MCP transport + auth · partial, 3 of 5 steps closed
+
+Walking skeleton in `spike/pl-013-mcp-auth/` (throwaway, no student data, no database). Plain `node:http` — no SDK dependency was needed to answer the questions.
+
+#### Q1: Does one 401 shape serve both Alexa+ and Claude Desktop? — **NO. Answered.**
+
+This is the finding worth having early. The conflict is at the level of a spec **MUST**, not a preference:
+
+- **MCP authorization spec + RFC 9728 §5.1:** a server returning 401 **MUST** send `WWW-Authenticate` carrying the `resource_metadata` URL, and clients MUST be able to parse it. It is the sole discovery path to the PRM document.
+- **Alexa+:** requires 401 **without** `WWW-Authenticate` (§2d).
+
+Measured with three server strategies against two client profiles:
+
+| Strategy | Spec-conformant client | Alexa+ client | Result |
+|---|---|---|---|
+| `spec` — header always present | ✅ passes | ❌ fails | Alexa+ broken |
+| `alexa` — header always absent | ❌ fails (2 assertions) | ✅ passes | Spec clients cannot discover the PRM |
+| `sniff` — vary per client | ✅ passes | ✅ passes | 13/13 |
+
+**Conclusion:** no single fixed 401 response satisfies both. The response must **vary by client**, so Sprint 2 needs an explicit branch in the auth middleware — not a constant. Plan on one of:
+
+1. **Per-client 401 shaping** (what the spike does) — branch on `User-Agent`. Cheap, but UA is client-controlled. Acceptable *only* because it varies a discovery hint, never the token check; spoofing it downgrades discoverability and nothing else. Document that invariant or someone will later "simplify" the branch into a security decision.
+2. **Separate resource endpoints** — e.g. `/mcp` (spec) and `/mcp/alexa` (header omitted). No sniffing, but two URLs to register and keep in sync.
+
+Option 2 is likely the sounder production choice; option 1 is proven to work. **This is a Sprint 2 decision that must not be deferred past the first commit** — AD-8 already says retrofitting auth is a rewrite.
+
+#### Q2: Which managed authorization server? — **BLOCKED**
+
+Open question 9 stays open. Requires a cloud account (Cognito/Auth0/Okta) that the spike had no credentials for. The skeleton serves `/.well-known/oauth-authorization-server` from a placeholder issuer, advertising `S256` only with `plain` deliberately absent, so swapping in a real issuer is a config change.
+
+#### Q3: Private / org-scoped distribution for an Alexa+ add-on? — **BLOCKED, but the signal is discouraging**
+
+No Amazon developer account, so unverified. Search surfaced **no** private-distribution path for **Alexa+ add-ons** specifically. What exists is adjacent and predates Alexa+:
+
+- **Alexa for Business** private skills — per-organization distribution, but that is the *classic skill* model, not the add-on model.
+- **Alexa Smart Properties** — organization-scoped, and §2c already flagged whether it intersects the add-on track as unknown. It remains unknown.
+
+The `addon.json` `storeListing` / `distributionCountries` / certification shape (§3e) still reads as a consumer marketplace. **Treat gate 3 as unresolved and assume public-store-only until Amazon confirms otherwise.** Development stage remains fine for building.
+
+#### Incidental findings worth keeping
+
+- The `X-Forwarded-*` hardening from `github/github-mcp-server` (§2d) is now asserted in the spike: the PRM document is built from a server-side constant, and a forged `X-Forwarded-Host` does not appear in the advertised URLs.
+- A no-argument tool schema (`additionalProperties: false`, empty `properties`) is a clean structural expression of rule 7 — there is no tenant field for an external model to fill. Worth carrying into the real tool definitions.
+
+#### What this changes
+
+- **AD-10 (new) — the 401 response is client-varying by design.** Not a bug, not a workaround. Any refactor that collapses it back to a single shape breaks one of the two clients.
+- Sprint 2 cannot begin its auth layer until open question 9 is answered.
+- Gate 3 (§6) is **not** cleared, and the spike could not clear it.
+
+---
+
 ## 9. Glossary
 
 | Term | Meaning |
@@ -288,6 +344,8 @@ Vectors 2 and 3 had **no test** until the Sprint 1 structure audit; T-22 and T-2
 ---
 
 ## Changelog
+
+**Rev 5 — PL-013 spike + structure audit.** Added Spike Results: the 401 divergence is a spec-level MUST conflict with **no single-shape solution** — the response must vary by client (AD-10 added). Authorization server (Q9) and Alexa+ private distribution (Q1) both **blocked** on credentials the spike lacked; no private distribution path for Alexa+ *add-ons* was found, only the older Alexa for Business private-skill and Smart Properties tracks. §7 leak vectors now carry test IDs; vectors 2 and 3 had no test until T-22/T-23 were added. Artifacts relocated from `sprint-1/` to the routed phase paths, which is what activated `artifact-budget-guard.py` and `spike-gate.py`.
 
 **Rev 4 — Source schema review.** Added §2e from the HEMS attendance tracker (structure only; no student data stored). Answered open question 4 — eSD is the system of record. Added F-1…F-5, notably: academic redo has no source in the tracker (F-2), the advisor-notes column carries health and family data and must never be read by a tool (F-3), and `DO NOT CALL` is an existing contact-permission flag that becomes a hard guardrail (F-4). Added open questions 10–11.
 
