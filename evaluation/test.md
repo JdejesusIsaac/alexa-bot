@@ -1,0 +1,155 @@
+# test.md — Sprint 1
+
+> **The gate:** T-01 through T-05 are cross-tenant isolation tests. The sprint does not ship with any of them failing or unwritten. Everything else can slip; these cannot.
+
+---
+
+## Strategy
+
+**Real Postgres, not a mock.** Row-level security is a database behavior. A mocked query layer will pass every isolation test while the real system leaks. Use Testcontainers; accept the slower suite.
+
+**The application role must not own the tables.** Table owners and superusers bypass RLS silently. If tests run as the owner, T-01 passes and production leaks. Verify the role explicitly in T-05.
+
+**Two tenants in every fixture, with colliding student names.** Campus A and Campus B both have a "Daniel Reyes." If a query forgets its tenant filter, a single-tenant fixture returns plausible-looking correct data and the bug ships. Name collision is what makes the leak visible.
+
+**Test the refusals harder than the successes.** The dangerous failure here is not an error — it's a confident answer built from stale, quarantined, or wrong-tenant data. Every refusal path gets an explicit test proving it is distinguishable from success.
+
+**Synthetic data only.** No real student names, refs, or exports in fixtures. Ever.
+
+---
+
+## Isolation — T-01 to T-05 (the gate)
+
+### T-01 · RLS scopes reads to the active tenant
+Seed roster entries for A and B. Set `app.tenant_id` to A. `select * from roster_entries` with no where clause.
+**Pass:** only A's rows. **Fail (critical):** any B row.
+
+### T-02 · Unset tenant context does not return everything
+Acquire a connection without setting `app.tenant_id`. Query `roster_entries`.
+**Pass:** query errors or returns zero rows. **Fail (critical):** returns all tenants' rows. *The failure mode this catches is a policy written against a nullable setting.*
+
+### T-03 · Name collision does not cross tenants
+A and B each have a "Daniel Reyes" with different statuses. Look up "Daniel Reyes" under tenant A.
+**Pass:** A's Daniel, A's status. **Fail (critical):** B's record, or two results.
+
+### T-04 · Pool does not leak tenant context
+Run `withTenant(A, …)`, release the connection, then acquire a connection and query **without** setting a tenant.
+**Pass:** behaves as T-02 — no rows. **Fail (critical):** A's rows, because `app.tenant_id` survived in the pooled connection.
+
+### T-05 · Application role cannot bypass RLS
+Assert the connected role is not superuser, does not own the RLS tables, and that `FORCE ROW LEVEL SECURITY` is set on each.
+**Pass:** all assertions hold. **Fail (critical):** every other isolation test is meaningless.
+
+---
+
+## Validation and quarantine — T-06 to T-08
+
+### T-06 · Dirty rows quarantine, clean rows survive
+Sheet with 200 rows: one malformed release time, one blank student name, one unknown reason code.
+**Pass:** 197 valid roster entries, exactly 3 quarantine records, each with its source row number and specific reason. Sync outcome is partial-success, not failure.
+
+### T-07 · Quarantined rows are unreachable from lookup
+Quarantine a row for a student, then call `getScholarStatus` for that student.
+**Pass:** a typed refusal ("can't confirm — see staff"), never the quarantined values.
+
+### T-08 · Different headers, identical canonical rows
+Campus A uses `Scholar` / `Out Time`; Campus B uses `Student Name` / `Release`. Both mapped via `column_mappings`.
+**Pass:** byte-identical canonical output for equivalent input.
+
+---
+
+## Privacy — T-09 to T-10
+
+### T-09 · No student PII in logs
+Capture all log output across a full sync and 50 lookups, including forced error paths. Scan for fixture student names and refs.
+**Pass:** zero matches; `tenant_id` present on every line.
+*Include error paths deliberately — stack traces echoing row data are the usual culprit.*
+
+### T-10 · Audit log is append-only at the database
+Attempt `update` and `delete` on `audit_log` as the application role.
+**Pass:** both rejected by Postgres. **Fail:** rejected only by application code — that's a convention, not a guarantee.
+
+---
+
+## Sync — T-11 to T-13
+
+### T-11 · Sync is idempotent
+Run sync twice against an unchanged sheet.
+**Pass:** no duplicate roster entries; second run recorded as a distinct sync with unchanged results.
+
+### T-12 · Staleness guard refuses stale rosters
+Sync, advance the clock past the freshness threshold, call `getScholarStatus`.
+**Pass:** typed stale refusal, distinguishable from not-found. **Fail (critical):** returns the stale answer as if current.
+
+### T-13 · Upstream failure does not corrupt good data
+Force the Sheets connector to fail mid-sync (auth error, then a timeout).
+**Pass:** previous roster intact, sync recorded as failed, staleness guard begins counting from the last *successful* sync — not this one.
+
+---
+
+## Service — T-14 to T-17
+
+### T-14 · Happy path
+Fresh roster, valid student, active redo entry.
+**Pass:** correct status, release time, reason. Audit entry written.
+
+### T-15 · The four refusals are distinguishable
+Stale roster · student not found · sync failed · row quarantined.
+**Pass:** four distinct typed results. **Fail (critical):** any two collapse into the same shape, or any returns an empty success. *Empty-as-success is the silent failure this whole sprint exists to prevent.*
+
+### T-16 · Every read is audited
+Run all of T-14 and T-15, then count audit rows.
+**Pass:** one entry per call — successes *and* refusals — with actor, subject, fields disclosed, and outcome.
+
+### T-17 · Migrations run clean from empty
+Fresh database, run all migrations, then the full suite.
+**Pass:** no manual steps, no errors, suite green.
+
+### T-18 · `getScholarStatus` holds the latency budget
+*(Added after the Alexa+ MCP review — see `research/research.md` §3a.)* Warm pool, seeded roster at realistic size, 200 sequential calls.
+**Pass:** p95 comfortably under 500 ms — target ≤150 ms, leaving headroom for transport, auth, and network in Sprint 2.
+**Fail:** at or near 500 ms. Alexa+ enforces the ceiling on the *entire* round trip, so the database read must be a fraction of it.
+
+---
+
+## Running
+
+```bash
+npm run test              # full suite (Testcontainers Postgres)
+npm run test:isolation    # T-01..T-05 only — run before every commit
+npm run verify            # typecheck + lint + test — CI gate
+```
+
+CI blocks merge on any failure. **Any isolation failure is a stop-the-line event**, not a ticket.
+
+---
+
+### T-19 · Advisor-notes column never leaves the connector
+*(Added after the source-schema review — `research/research.md` §2e F-3.)* Seed a fixture whose notes column contains sensitive free text. Run sync, then call `getScholarStatus`.
+**Pass:** the notes value appears in no canonical row, no service response, and no log line. **Fail (critical):** it appears anywhere downstream. This column carries health and family detail; exclusion happens at ingestion, not by filtering later.
+
+### T-20 · `DO NOT CALL` survives ingestion intact
+*(§2e F-4.)* Fixture rows with the flag set and unset.
+**Pass:** the flag lands on the canonical row and is queryable. It is a hard guardrail on proactive contact in later sprints, so losing it in ingestion is a silent policy failure.
+
+### T-21 · Derived holds are marked and never parent-facing
+*(Added in plan rev 2 — see PL-012 and `research/research.md` §2e F-2.)* Seed a scholar whose detention is *derived* (Tardy or Missing ID) with no authoritative hold column, and a second whose hold is authoritative.
+**Pass:** both carry a correct `hold_source` (`derived` / `authoritative`); the derived one is retrievable on the staff path and **blocked on any parent-facing path**.
+**Fail (critical):** a derived hold is indistinguishable from an authoritative one. Staff may have waived the detention — telling a parent their child is being held, on an inference, is the exact failure this project exists to avoid.
+
+---
+
+## Deliberately not tested this sprint
+
+Voice, Alexa, LLM output quality, MCP tools, parent verification, email, calendar. Out of scope per `planning/plan.md`.
+
+**Queued for Sprint 2** — two leak vectors added by the Alexa+ review (`research/research.md` §7, vectors 6–7). Both are untestable until the MCP server exists, and both are critical when it does:
+
+- **Over-disclosure in a tool response.** Alexa+ runs Amazon's model, not ours. Any field we return may be spoken aloud immediately. Test that an unverified caller's response payload *omits* the reason field entirely rather than returning it with a caveat.
+- **`tenant_id` as a tool argument.** An external model fills tool arguments. Test that no tool schema accepts a tenant parameter, and that a forged one in the payload is ignored in favor of the token-derived value.
+
+---
+
+## Adding tests
+
+Append with the next ID. If a test is added because something broke in real use, note that in the description — it's the difference between a test someone imagined and a test that caught a live bug, and it changes how seriously the next person takes a failure.

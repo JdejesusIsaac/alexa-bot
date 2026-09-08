@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "pre_write_code": [
+      { "command": "python3 .windsurf/hooks/student-data-guard.py", "show_output": true },
+      { "command": "python3 .windsurf/hooks/tenant-isolation-guard.py", "show_output": true },
+      { "command": "python3 .windsurf/hooks/artifact-budget-guard.py", "show_output": true },
+      { "command": "python3 .windsurf/hooks/spike-gate.py", "show_output": true },
+      { "command": "python3 .windsurf/hooks/failure-check.py", "show_output": true }
+    ],
+    "pre_read_code": [
+      { "command": "python3 .windsurf/hooks/evaluator-isolation.py", "show_output": true }
+    ],
+    "pre_mcp_tool_use": [
+      { "command": "python3 .windsurf/hooks/mcp-phase-router.py", "show_output": true }
+    ]
+  }
+}

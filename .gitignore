@@ -1,0 +1,6 @@
+.env
+*.csv
+*.xlsx
+*.xls
+fixtures/real/
+.windsurf/state/
