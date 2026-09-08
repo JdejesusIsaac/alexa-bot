@@ -63,6 +63,8 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 | Privacy (T-09…T-10) | 0 / 2 | 0 / 2 |
 | Sync (T-11…T-13) | 0 / 3 | 0 / 3 |
 | Service (T-14…T-18) | 0 / 5 | 0 / 5 |
+| Leak vectors (T-22…T-23) | 0 / 2 | 0 / 2 |
+| **Total** | **0 / 23** | **0 / 23** |
 
 ---
 
@@ -88,6 +90,7 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 - Git repo initialized (it did not previously exist), initial commit, pushed to `origin/main`.
 - Wrote the **Sprint Contract** into `planning/plan.md` — rubric Auth&Security 50 / Functionality 30 / Design 10 / Originality 10, every test mapped to a requirement, 8 hard-fail gates, ≥90% pass threshold.
 - Added the **Failed Approaches** section, previously missing.
+- **Applied four audit fixes:** T-14 rewritten from "active redo entry" to derived detention (it described an unreachable state and could never pass); added **T-22** (tenant-scoped cache, leak vector 2) and **T-23** (background jobs in tenant context, leak vector 3); corrected `research.md` rev 3 → rev 4; moved T-19/20/21 above `## Running` into named sections. Test count 21 → 23. §7 leak vectors now carry test IDs.
 **Decisions made:**
 - Single canonical artifact location; `sprint-1/` dropped rather than kept as a snapshot, to avoid two drifting copies.
 - Sprint Contract is marked **provisional until PL-013 closes**, per the spike-gate rule.
@@ -95,8 +98,9 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 - **`artifact-budget-guard.py` keys on the four routed paths.** While the artifacts lived in `sprint-1/` the budget hook matched nothing and silently passed on every write — the guard was installed but inert. The restructure is what switched it on.
 - **12 of 21 tests were never cited by any task AC** (T-03, T-06…T-08, T-10…T-17). The Sprint Contract now provides that traceability.
 - Repo had no `.git` at all despite being believed initialized.
-**Open:** four audit findings pending decision — see below. Open question 9 (which AS) still unresolved, routed into PL-013.
-**Next action:** resolve the four audit findings, then run **PL-013** (timeboxed 1 day, throwaway), then **PL-001**.
+- **`spike-gate.py` is also inert:** it blocks `planning/` writes only when `research.md` contains `SPIKE:` markers. There are zero, so PL-013 was never registered as a spike and the gate never fires. Marking PL-013's open questions `SPIKE:` would arm it — and would correctly block further planning writes until a `## Spike Results` section exists.
+**Open:** open question 9 (which authorization server) still unresolved — routed into PL-013 as a deliverable. Whether to arm the spike gate is pending a call.
+**Next action:** run **PL-013** (timeboxed 1 day, throwaway) — needs a cloud AS account (Cognito/Auth0/Okta) before it can start. Then **PL-001**.
 
 ### Session 4 — final sprint optimization
 **Worked on:** `planning/plan.md` → rev 2, `evaluation/test.md` T-21, `implementation/progress.md`
@@ -180,7 +184,7 @@ See `evaluation/test.md` for definitions. Isolation tests are the gate — the s
 ## Definition of sprint complete
 
 - [ ] All 13 tasks ✅
-- [ ] All 21 tests written and passing
+- [ ] All 23 tests written and passing
 - [ ] Migrations run clean from empty on a fresh database
 - [ ] `getScholarStatus` correct for 10 consecutive business days
 - [ ] Zero cross-tenant leakage across the full test suite

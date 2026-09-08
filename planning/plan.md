@@ -217,7 +217,7 @@ Weights follow the security-critical default in `planning/AGENTS.md`. This proje
 
 | Criterion | Weight | Graded against |
 |---|---|---|
-| **Auth & Security** | **50%** | T-01…T-05, T-09, T-10, T-19, T-20, T-21 |
+| **Auth & Security** | **50%** | T-01…T-05, T-09, T-10, T-19…T-23 |
 | Functionality | 30% | T-06…T-08, T-11…T-18 |
 | Design | 10% | PL-003, PL-004, PL-012 structural ACs |
 | Originality | 10% | PL-012 derivation-as-config; PL-009 typed-refusal model |
@@ -238,6 +238,8 @@ Weights follow the security-critical default in `planning/AGENTS.md`. This proje
 | S-8 | Advisor-notes content is absent from every canonical row, response, and log | T-19 |
 | S-9 | `do_not_call` survives ingestion and is queryable | T-20 |
 | S-10 | Derived holds carry `hold_source` and are blocked on parent-facing paths | T-21 |
+| S-11 | Any read-path cache is tenant-scoped; RLS cannot see a cache hit | T-22 |
+| S-12 | Background jobs establish tenant context explicitly and fail loudly without it | T-23 |
 
 ### Functionality — 30%
 

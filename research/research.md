@@ -4,7 +4,7 @@
 
 **Project:** Parent Line — voice-first parent support agent for a K-12 charter network
 **Sprint 1 scope:** deterministic core only. No voice, no LLM, no MCP.
-**Last updated:** Sprint 1, Day 0 — rev 3. **Alexa+ MCP Toolkit review (§2c) superseded several earlier decisions; §2d surveys reference implementations.**
+**Last updated:** Sprint 1, Day 0 — rev 4. **Alexa+ MCP Toolkit review (§2c) superseded several earlier decisions; §2d surveys reference implementations; §2e records the source-data schema.**
 
 ---
 
@@ -240,15 +240,19 @@ The QuickStart states security and data policy details "will be published in a f
 
 ## 7. Known cross-tenant leak vectors
 
-Each has a test in `evaluation/test.md`.
+Each has a test in `evaluation/test.md`, named here so the claim is checkable rather than asserted.
 
-1. A query written without a tenant filter
-2. Cache keys missing `tenant_id`
-3. Background jobs running without tenant context set
-4. A connection returned to the pool with `app.tenant_id` still set
-5. Logs or error traces echoing another tenant's rows
-6. **A tool returning a field the caller isn't cleared for** — the model will speak it (§3b)
-7. **A tool accepting `tenant_id` as an argument** — an external model fills arguments (§3b)
+| # | Vector | Test |
+|---|---|---|
+| 1 | A query written without a tenant filter | T-01, T-03 |
+| 2 | Cache keys missing `tenant_id` | T-22 |
+| 3 | Background jobs running without tenant context set | T-23 |
+| 4 | A connection returned to the pool with `app.tenant_id` still set | T-04 |
+| 5 | Logs or error traces echoing another tenant's rows | T-09 |
+| 6 | **A tool returning a field the caller isn't cleared for** — the model will speak it (§3b) | Sprint 2 |
+| 7 | **A tool accepting `tenant_id` as an argument** — an external model fills arguments (§3b) | Sprint 2 |
+
+Vectors 2 and 3 had **no test** until the Sprint 1 structure audit; T-22 and T-23 were added to close them. Vector 3 is the live one — PL-007's scheduler is a background job that writes student data with no request to derive tenant from.
 
 ---
 

@@ -87,11 +87,12 @@ Force the Sheets connector to fail mid-sync (auth error, then a timeout).
 
 ---
 
-## Service — T-14 to T-17
+## Service — T-14 to T-18
 
 ### T-14 · Happy path
-Fresh roster, valid student, active redo entry.
-**Pass:** correct status, release time, reason. Audit entry written.
+Fresh roster, valid student, an active **derived detention** (Tardy or Missing ID).
+**Pass:** correct status, release time, reason, and `hold_source: derived`. Audit entry written.
+*Originally written as "active redo entry." Redo is deferred this sprint — it has no source in the tracker (`research/research.md` §2e F-2) — so the original wording described a state the system cannot reach and the test could never go green. Detention is what Sprint 1 actually ships.*
 
 ### T-15 · The four refusals are distinguishable
 Stale roster · student not found · sync failed · row quarantined.
@@ -112,17 +113,7 @@ Fresh database, run all migrations, then the full suite.
 
 ---
 
-## Running
-
-```bash
-npm run test              # full suite (Testcontainers Postgres)
-npm run test:isolation    # T-01..T-05 only — run before every commit
-npm run verify            # typecheck + lint + test — CI gate
-```
-
-CI blocks merge on any failure. **Any isolation failure is a stop-the-line event**, not a ticket.
-
----
+## Source schema and derivation — T-19 to T-21
 
 ### T-19 · Advisor-notes column never leaves the connector
 *(Added after the source-schema review — `research/research.md` §2e F-3.)* Seed a fixture whose notes column contains sensitive free text. Run sync, then call `getScholarStatus`.
@@ -136,6 +127,32 @@ CI blocks merge on any failure. **Any isolation failure is a stop-the-line event
 *(Added in plan rev 2 — see PL-012 and `research/research.md` §2e F-2.)* Seed a scholar whose detention is *derived* (Tardy or Missing ID) with no authoritative hold column, and a second whose hold is authoritative.
 **Pass:** both carry a correct `hold_source` (`derived` / `authoritative`); the derived one is retrievable on the staff path and **blocked on any parent-facing path**.
 **Fail (critical):** a derived hold is indistinguishable from an authoritative one. Staff may have waived the detention — telling a parent their child is being held, on an inference, is the exact failure this project exists to avoid.
+
+---
+
+## Remaining leak vectors — T-22 to T-23
+
+*`research/research.md` §7 lists seven cross-tenant leak vectors and claims each has a test here. Vectors 2 and 3 did not. These close that gap; vectors 6–7 remain Sprint 2, since they need the MCP server to exist.*
+
+### T-22 · Cache keys are tenant-scoped *(leak vector 2)*
+With any caching or memoization in the read path, warm the cache under tenant A for a student ref that exists in **both** tenants, then perform the same lookup under tenant B.
+**Pass:** B receives B's record. **Fail (critical):** B receives A's cached value. *If no cache exists yet, this test asserts that — so that adding one later cannot silently bypass RLS, which lives in the database and cannot see a cache hit.*
+
+### T-23 · Background jobs run inside tenant context *(leak vector 3)*
+The scheduled sync (PL-007) is a background job that writes student data with no HTTP request to derive tenant from. Invoke it directly, outside any request scope.
+**Pass:** it establishes tenant context explicitly via `withTenant` and writes only that tenant's rows; a run with no tenant resolved fails loudly rather than writing unscoped. **Fail (critical):** rows land with a wrong or null `tenant_id`, or the job writes across tenants in one pass.
+
+---
+
+## Running
+
+```bash
+npm run test              # full suite (Testcontainers Postgres)
+npm run test:isolation    # T-01..T-05 only — run before every commit
+npm run verify            # typecheck + lint + test — CI gate
+```
+
+CI blocks merge on any failure. **Any isolation failure is a stop-the-line event**, not a ticket.
 
 ---
 
