@@ -75,7 +75,14 @@ describe('PL-104 · discovery endpoints', () => {
   });
 });
 
-describe('PL-104 · client-conditional 401 (AD-10)', () => {
+// T-32 — the 401 branch signal, recorded per spec: User-Agent contains
+// the substring "alexa", or the `x-amzn-alexa-client` header is present
+// (src/auth/http401.ts). It fires before `initialize`, so no MCP client
+// info exists yet. The signal is spoofable — deliberately acceptable
+// because it only shapes the discovery hint (WWW-Authenticate present
+// or absent), never the token check. PL-013 found no single 401 shape
+// serves both clients (AD-10), so the branch exists at all.
+describe('PL-104 · client-conditional 401 (AD-10) — signal: "alexa" in User-Agent or x-amzn-alexa-client header, pre-initialize, spoofable', () => {
   it('T-32: Alexa-shaped client gets a 401 without WWW-Authenticate', async () => {
     const init = await client.initialize({
       userAgent: 'AlexaPlus/1.0 AlexaDevice/25',

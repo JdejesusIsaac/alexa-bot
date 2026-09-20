@@ -28,8 +28,9 @@
  *   advertise, `X-Forwarded-*` included.
  * - **Every request is audited** (E5, T-40): auth failures with a NULL
  *   tenant row, everything else inside the caller's tenant context.
- *   Tool calls write their own row from the handler; this layer audits
- *   handshake/list/notifications and rejections.
+ *   This boundary writes the row for every request including
+ *   `tools/call` — handlers enrich via `requestMeta.toolAudit` and
+ *   calls the SDK rejects before dispatch are still audited (AD-42).
  * - **Standalone GET returns immediately** (T-49) — request/response
  *   JSON only (PL-113 streaming posture); no SSE, nothing to hang.
  */
@@ -51,7 +52,8 @@ import { type Config } from '../config.js';
 import { type Logger } from '../logging/logger.js';
 import { TokenVerifier } from '../auth/token-verifier.js';
 import { send401, isAlexaShapedClient } from '../auth/http401.js';
-import { createMcpServer } from './server.js';
+import { createMcpServer, TOOL_NAMES } from './server.js';
+import { type ToolCallAudit } from './tools/common.js';
 import {
   insertTenantMcpAuditEntry,
   insertUnauthenticatedMcpAuditEntry,
@@ -245,6 +247,11 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     httpMethod: string,
     rpcMethod: string | null,
     outcome: string,
+    detail: {
+      tool?: string | null;
+      argumentsRedacted?: Record<string, unknown>;
+      toolMs?: number | null;
+    } = {},
   ): Promise<void> {
     try {
       await withTenant(appPool, identity.tenantId, (client) =>
@@ -254,11 +261,11 @@ export function createMcpApp(options: McpAppOptions): McpApp {
           role: identity.role,
           httpMethod,
           rpcMethod,
-          tool: null,
-          argumentsRedacted: {},
+          tool: detail.tool ?? null,
+          argumentsRedacted: detail.argumentsRedacted ?? {},
           outcome,
           authMs: Math.round(authMs),
-          toolMs: null,
+          toolMs: detail.toolMs ?? null,
           totalMs: Math.round(performance.now() - requestStartedAt),
         }),
       );
@@ -378,7 +385,17 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     if (req.method === 'GET') {
       // PL-113 streaming posture: request/response JSON only. A
       // standalone GET for server-initiated messages gets a clean,
-      // immediate, documented response — never a hang (T-49).
+      // immediate, documented response — never a hang (T-49). Audited
+      // like every other authenticated call (E5).
+      await auditTenantRequest(
+        identity,
+        requestId,
+        requestStartedAt,
+        authMs,
+        'GET',
+        null,
+        'rejected:method_not_allowed',
+      );
       res.writeHead(405, { allow: 'POST, DELETE' });
       res.end();
       return;
@@ -405,10 +422,28 @@ export function createMcpApp(options: McpAppOptions): McpApp {
       await record.transport.handleRequest(req, res);
       sessions.delete(sessionId);
       await record.transport.close().catch(() => undefined);
+      await auditTenantRequest(
+        identity,
+        requestId,
+        requestStartedAt,
+        authMs,
+        'DELETE',
+        null,
+        'session_terminated',
+      );
       return;
     }
 
     if (req.method !== 'POST') {
+      await auditTenantRequest(
+        identity,
+        requestId,
+        requestStartedAt,
+        authMs,
+        req.method ?? '?',
+        null,
+        'rejected:method_not_allowed',
+      );
       res.writeHead(405, { allow: 'GET, POST, DELETE' });
       res.end();
       return;
@@ -472,7 +507,7 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     const message = raw as {
       id?: string | number;
       method?: string;
-      params?: { protocolVersion?: string };
+      params?: { protocolVersion?: string; name?: unknown };
     };
     const rpcMethod = typeof message.method === 'string' ? message.method : null;
 
@@ -558,12 +593,14 @@ export function createMcpApp(options: McpAppOptions): McpApp {
       await server.connect(transport as unknown as Parameters<typeof server.connect>[0]);
 
       // Identity and per-request context ride on req.auth — per request,
-      // never cached against the session (AD-18).
+      // never cached against the session (AD-18). `requestMeta` is also
+      // the handler's audit-enrichment slot (AD-42).
+      const requestMeta = { identity, requestId, requestStartedAt, authMs };
       (req as IncomingMessage & { auth?: object }).auth = {
         token: '',
         clientId: 'static-client',
         scopes: [],
-        extra: { identity, requestId, requestStartedAt, authMs },
+        extra: requestMeta,
       };
 
       try {
@@ -618,11 +655,18 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     }
     record.lastActivity = Date.now();
 
+    const requestMeta: {
+      identity: typeof identity;
+      requestId: string;
+      requestStartedAt: number;
+      authMs: number;
+      toolAudit?: ToolCallAudit;
+    } = { identity, requestId, requestStartedAt, authMs };
     (req as IncomingMessage & { auth?: object }).auth = {
       token: '',
       clientId: 'static-client',
       scopes: [],
-      extra: { identity, requestId, requestStartedAt, authMs },
+      extra: requestMeta,
     };
 
     try {
@@ -639,9 +683,48 @@ export function createMcpApp(options: McpAppOptions): McpApp {
       }
     }
 
-    // tools/call requests are audited inside the tool handler (one row,
-    // with the tool's own latency stages). Everything else is audited here.
-    if (rpcMethod !== 'tools/call') {
+    // Every request is audited here at the boundary (AD-42). For
+    // tools/call the handler's enrichment rides `requestMeta.toolAudit`;
+    // its absence means the SDK rejected the call before dispatch —
+    // unknown tool, or arguments that failed schema validation — and
+    // that rejection still gets its row (E5).
+    if (rpcMethod === 'tools/call') {
+      const requestedTool =
+        typeof message.params?.name === 'string' ? message.params.name : null;
+      const enrichment = requestMeta.toolAudit;
+      const outcome =
+        enrichment?.outcome ??
+        (requestedTool === null
+          ? 'rejected:malformed_tool_call'
+          : TOOL_NAMES.has(requestedTool)
+            ? 'rejected:tool_call_failed'
+            : 'rejected:unknown_tool');
+      logger.info({
+        msg: 'mcp_request',
+        tenant_id: identity.tenantId,
+        request_id: requestId,
+        rpc_method: rpcMethod,
+        tool: enrichment?.tool ?? requestedTool,
+        outcome,
+        auth_ms: Math.round(authMs),
+        tool_ms: enrichment?.toolMs ?? null,
+        total_ms: Math.round(performance.now() - requestStartedAt),
+      });
+      await auditTenantRequest(
+        identity,
+        requestId,
+        requestStartedAt,
+        authMs,
+        'POST',
+        'tools/call',
+        outcome,
+        {
+          tool: enrichment?.tool ?? requestedTool,
+          argumentsRedacted: enrichment?.argumentsRedacted ?? {},
+          toolMs: enrichment?.toolMs ?? null,
+        },
+      );
+    } else {
       const outcome = rpcMethod === null ? 'received' : rpcMethod.replaceAll('/', '_');
       logger.info({
         msg: 'mcp_request',
@@ -661,15 +744,6 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         rpcMethod,
         outcome,
       );
-    } else {
-      logger.debug({
-        msg: 'mcp_request',
-        tenant_id: identity.tenantId,
-        request_id: requestId,
-        rpc_method: rpcMethod,
-        auth_ms: Math.round(authMs),
-        total_ms: Math.round(performance.now() - requestStartedAt),
-      });
     }
   }
 
@@ -677,7 +751,10 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      json(res, 200, { ok: true, sessions: sessions.size });
+      // Bare liveness only — session counts are ops data and do not
+      // belong on an unauthenticated surface (eval F-4). sessionCount()
+      // stays on McpApp for tests and ops.
+      json(res, 200, { ok: true });
       return;
     }
 

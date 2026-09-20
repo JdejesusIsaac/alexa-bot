@@ -22,7 +22,6 @@ import {
 } from '../../services/scholar-status.js';
 import { findByStudentName } from '../../repositories/roster-entries.js';
 import { project } from '../../disclosure/policy.js';
-import { insertTenantMcpAuditEntry } from '../../repositories/mcp-audit.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 
 export const LOOKUP_SCHOLAR_STATUS_NAME = 'lookup_scholar_status';
@@ -65,10 +64,14 @@ export async function handleLookupScholarStatus(
   const parsed = lookupArgs.safeParse(rawArgs ?? {});
   if (!parsed.success) {
     // Invalid arguments are a refusal, not an empty success — the caller
-    // must be able to distinguish and correct.
-    await auditRefusal(deps, meta, null, toolStart, 'refusal:invalid_arguments', {
-      lookup_by: 'invalid',
-    });
+    // must be able to distinguish and correct. Enrichment only: the
+    // boundary writes the audit row (AD-42).
+    meta.toolAudit = {
+      tool: LOOKUP_SCHOLAR_STATUS_NAME,
+      argumentsRedacted: { lookup_by: 'invalid' },
+      outcome: 'refusal:invalid_arguments',
+      toolMs: Math.round(performance.now() - toolStart),
+    };
     return {
       content: [{ type: 'text', text: REFUSAL_COPY.invalid_arguments! }],
       isError: true,
@@ -89,9 +92,12 @@ export async function handleLookupScholarStatus(
           kind: 'refusal',
           reason: 'student_not_found',
         };
-        await auditRefusal(deps, meta, client, toolStart, 'refusal:student_not_found', {
-          lookup_by: 'student_name',
-        });
+        meta.toolAudit = {
+          tool: LOOKUP_SCHOLAR_STATUS_NAME,
+          argumentsRedacted: { lookup_by: 'student_name' },
+          outcome: 'refusal:student_not_found',
+          toolMs: Math.round(performance.now() - toolStart),
+        };
         return refusal;
       }
       studentRef = entry.student_ref;
@@ -104,30 +110,18 @@ export async function handleLookupScholarStatus(
       freshnessMinutes: deps.rosterFreshnessMinutes,
     });
 
-    if (status.kind === 'refusal') {
-      await auditRefusal(deps, meta, client, toolStart, `refusal:${status.reason}`, {
+    // T-40 — every call audited, success included; the boundary writes
+    // the row from this enrichment (AD-42). Recorded arguments carry no
+    // student identifiers: which lookup mode was used, not the value.
+    meta.toolAudit = {
+      tool: LOOKUP_SCHOLAR_STATUS_NAME,
+      argumentsRedacted: {
         lookup_by: args.student_ref !== undefined ? 'student_ref' : 'student_name',
-      });
-    } else {
-      // T-40 — every call audited, success included. Recorded arguments
-      // carry no student identifiers: which lookup mode was used, not the
-      // value looked up.
-      await insertTenantMcpAuditEntry(client, {
-        requestId: meta.requestId,
-        actor: identity.sub,
-        role: identity.role,
-        httpMethod: 'POST',
-        rpcMethod: 'tools/call',
-        tool: LOOKUP_SCHOLAR_STATUS_NAME,
-        argumentsRedacted: {
-          lookup_by: args.student_ref !== undefined ? 'student_ref' : 'student_name',
-        },
-        outcome: 'success',
-        authMs: Math.round(meta.authMs),
-        toolMs: Math.round(performance.now() - toolStart),
-        totalMs: Math.round(performance.now() - meta.requestStartedAt),
-      });
-    }
+      },
+      outcome:
+        status.kind === 'refusal' ? `refusal:${status.reason}` : 'success',
+      toolMs: Math.round(performance.now() - toolStart),
+    };
     return status;
   });
 
@@ -162,40 +156,4 @@ export async function handleLookupScholarStatus(
     content: [{ type: 'text', text: summary }],
     structuredContent: { kind: 'success', scholar },
   };
-}
-
-async function auditRefusal(
-  deps: ToolDeps,
-  meta: {
-    identity: { sub: string; tenantId: string; role: string };
-    requestId: string;
-    requestStartedAt: number;
-    authMs: number;
-  },
-  client: Parameters<typeof insertTenantMcpAuditEntry>[0] | null,
-  toolStart: number,
-  outcome: string,
-  recordedArgs: Record<string, unknown>,
-): Promise<void> {
-  const entry = {
-    requestId: meta.requestId,
-    actor: meta.identity.sub,
-    role: meta.identity.role,
-    httpMethod: 'POST',
-    rpcMethod: 'tools/call',
-    tool: LOOKUP_SCHOLAR_STATUS_NAME,
-    argumentsRedacted: recordedArgs,
-    outcome,
-    authMs: Math.round(meta.authMs),
-    toolMs: Math.round(performance.now() - toolStart),
-    totalMs: Math.round(performance.now() - meta.requestStartedAt),
-  };
-  if (client !== null) {
-    await insertTenantMcpAuditEntry(client, entry);
-  } else {
-    // Argument-validation failures happen outside a tenant context.
-    await withTenant(deps.appPool, meta.identity.tenantId, (c) =>
-      insertTenantMcpAuditEntry(c, entry),
-    );
-  }
 }

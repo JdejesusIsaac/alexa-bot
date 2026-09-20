@@ -171,6 +171,14 @@ describe('PL-113 · T-48: cold-JWKS latency', () => {
     expect(coldRes.status).toBe(200);
 
     const warmMedian = median(warm);
+    // Record the number with its conditions (eval F-2) — the cold path
+    // is E3's realistic worst case, and an unrecorded bound is not a
+    // measurement.
+    console.log(
+      `[T-48] cold JWKS request-path fetch: ${cold.toFixed(1)}ms ` +
+        `(warm median ${warmMedian.toFixed(1)}ms, local JWKS) — ` +
+        `E3 criterion ≤300ms, Alexa+ headroom bound <500ms`,
+    );
     // The local JWKS is one localhost fetch — a few ms. The assertion is
     // that cold does not explode (no retry storm, no timeout path) and
     // that the difference is one fetch, not many.

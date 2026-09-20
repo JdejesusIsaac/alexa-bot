@@ -14,7 +14,6 @@
 import { withTenant } from '../../db/tenant-context.js';
 import { findLatestSync } from '../../repositories/roster-syncs.js';
 import { summarizeQuarantine } from '../../repositories/quarantined-rows.js';
-import { insertTenantMcpAuditEntry } from '../../repositories/mcp-audit.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 import type { LookupResult } from './lookup-scholar-status.js';
 
@@ -37,22 +36,14 @@ export async function handleRosterSyncStatus(
 
   if (identity.role !== 'admin') {
     // T-39 — an authorization refusal distinguishable from an empty
-    // result. Refuse before touching tenant data.
-    await withTenant(deps.appPool, identity.tenantId, (client) =>
-      insertTenantMcpAuditEntry(client, {
-        requestId: meta.requestId,
-        actor: identity.sub,
-        role: identity.role,
-        httpMethod: 'POST',
-        rpcMethod: 'tools/call',
-        tool: ROSTER_SYNC_STATUS_NAME,
-        argumentsRedacted: {},
-        outcome: 'refusal:insufficient_role',
-        authMs: Math.round(meta.authMs),
-        toolMs: Math.round(performance.now() - toolStart),
-        totalMs: Math.round(performance.now() - meta.requestStartedAt),
-      }),
-    );
+    // result. Refuse before touching tenant data. Enrichment only —
+    // the boundary writes the audit row (AD-42).
+    meta.toolAudit = {
+      tool: ROSTER_SYNC_STATUS_NAME,
+      argumentsRedacted: {},
+      outcome: 'refusal:insufficient_role',
+      toolMs: Math.round(performance.now() - toolStart),
+    };
     return {
       content: [{ type: 'text', text: REFUSAL_COPY.insufficient_role! }],
       isError: true,
@@ -69,21 +60,12 @@ export async function handleRosterSyncStatus(
   const toolMs = Math.round(performance.now() - toolStart);
   const totalMs = Math.round(performance.now() - meta.requestStartedAt);
 
-  await withTenant(deps.appPool, identity.tenantId, (client) =>
-    insertTenantMcpAuditEntry(client, {
-      requestId: meta.requestId,
-      actor: identity.sub,
-      role: identity.role,
-      httpMethod: 'POST',
-      rpcMethod: 'tools/call',
-      tool: ROSTER_SYNC_STATUS_NAME,
-      argumentsRedacted: {},
-      outcome: 'success',
-      authMs: Math.round(meta.authMs),
-      toolMs,
-      totalMs,
-    }),
-  );
+  meta.toolAudit = {
+    tool: ROSTER_SYNC_STATUS_NAME,
+    argumentsRedacted: {},
+    outcome: 'success',
+    toolMs,
+  };
 
   const lastSyncAt = result.latest?.finished_at ?? null;
   const ageMinutes =

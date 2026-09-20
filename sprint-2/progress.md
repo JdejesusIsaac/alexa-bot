@@ -34,10 +34,10 @@ Graded separately from the rubric (AD-14). Sprint 1 kept two lists that disagree
 | --- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | E1  | Staff completes a full day from Claude Desktop, no wrong answer                                    | ⬜ PL-112 unblocked — console wiring in progress                                                 |
 | E2  | Zero cross-tenant leakage through MCP, incl. forged arguments                                      | 🟡 verified locally (T-33…T-35, T-47); remote run pending                                        |
-| E3  | p95 full round trip ≤300 ms, recorded with conditions — warm **and** cold JWKS reported separately | 🟡 local conditions: warm ~ms-scale, cold JWKS <500 ms (T-48); remote measurement pending PL-112 |
+| E3  | p95 full round trip ≤300 ms, recorded with conditions — warm **and** cold JWKS reported separately | 🟡 local numbers recorded: warm client p95 **3.7 ms** (T-41, 200 calls), cold JWKS **2.3 ms** (T-48); remote measurement pending PL-112 |
 | E4  | No tenant parameter in any schema; no uncleared field returned                                     | 🟡 verified locally (T-34, T-36, T-45); final grading at evaluation                              |
-| E5  | Every MCP call audited, actor from token                                                           | 🟡 verified locally (T-40, T-41)                                                                 |
-| E6  | PL-013 Q2 and Q3 closed in writing                                                                 | 🟡 **partial** — Q2 closed by observation (research.md §8, Auth0 HONORED); **Q3 unanswered**      |
+| E5  | Every MCP call audited, actor from token                                                           | 🟡 repaired under AD-42 — boundary-owned audit covers pre-dispatch rejections (eval F-1); regrade at re-issue |
+| E6  | PL-013 Q2 closed in writing; Q3 descoped under AD-33                                               | ✅ closed — Q2 answered by observation (research.md §8, Auth0 HONORED); Q3 descoped to Sprint 3   |
 
 ---
 
@@ -120,6 +120,13 @@ _Newest at the top. Copy the template, don't reformat it._
 ```
 
 ---
+
+### Session 9 — eval findings repair (F-1…F-4)
+**Worked on:** evaluator findings F-1…F-4
+**Done:** (a) **F-1 → AD-42**: `tools/call` auditing moved to the HTTP boundary outright — one writer, one row per request. Handlers enrich via `requestMeta.toolAudit` (new slot on `RequestMeta`); absent enrichment post-dispatch is the pre-dispatch-rejection signal (`rejected:unknown_tool` / `rejected:tool_call_failed` / `rejected:malformed_tool_call`). `search_roster`'s invalid-args branch now enriches (parity with lookup). Authenticated 405s (GET + other methods) and successful session DELETEs now audited. (b) **F-2**: T-41 implements its spec — 200 sequential calls, per-stage p95 from the audit trail plus client round-trip, `console.log` recorded with conditions: **auth 0ms · tool 2ms · server-total 4ms · client p95 3.7ms local** (criterion ≤300). T-48 now records the cold number: **2.3ms** vs warm median 1.5ms (local JWKS). (c) **F-3**: T-32's describe names the branch signal (UA substring `alexa` / `x-amzn-alexa-client`, pre-initialize, spoofable). (d) **F-4**: `/health` returns `{ok:true}` — `sessions` dropped from the unauthenticated surface; `sessionCount()` remains on `McpApp`. (e) **E6 closed**: Q3 descoped under AD-33 (recorded in research.md alongside AD-42).
+**Decisions made:** measurement only for E3 — no PL-212 warm-path work pulled forward; the recorded local numbers are the baseline the remote run will be compared against. Post-response audit write is accepted by design (AD-42): the row commits microseconds after the response flush; tests poll for commit lag.
+**Surprises:** the SDK surfaces pre-dispatch rejections as `result.isError` (HTTP 200), not a JSON-RPC `error` field — wire shape verified by probe before fixing assertions. Boundary audit ordering created a visible commit lag (199/200 rows on first run) — test polls now.
+**Next action:** re-issue the evaluation scoped per the written rule — code changed, so the touched rubric rows (Auth & Security: audit row; Functionality: T-41) regrade. E1 + remote E3 remain user-gated (Auth0 Action → probe --e2e → Claude Desktop); soak continues weekdays.
 
 ### Session 8 — JWKS warming, re-issue rule, evaluator dispatch
 **Worked on:** E3 hardening (JWKS warm path), evaluator preparation

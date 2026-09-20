@@ -24,7 +24,6 @@ import {
 } from '../../repositories/roster-entries.js';
 import { isRosterFresh, findLatestSync } from '../../repositories/roster-syncs.js';
 import { project } from '../../disclosure/policy.js';
-import { insertTenantMcpAuditEntry } from '../../repositories/mcp-audit.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 import type { LookupResult } from './lookup-scholar-status.js';
 
@@ -67,6 +66,13 @@ export async function handleSearchRoster(
     .passthrough()
     .safeParse(rawArgs ?? {});
   if (!parsed.success) {
+    // Enrichment only — the boundary writes the audit row (AD-42).
+    meta.toolAudit = {
+      tool: SEARCH_ROSTER_NAME,
+      argumentsRedacted: {},
+      outcome: 'refusal:invalid_arguments',
+      toolMs: Math.round(performance.now() - toolStart),
+    };
     return {
       content: [{ type: 'text', text: REFUSAL_COPY.invalid_arguments! }],
       isError: true,
@@ -121,44 +127,22 @@ export async function handleSearchRoster(
   const toolMs = Math.round(performance.now() - toolStart);
   const totalMs = Math.round(performance.now() - meta.requestStartedAt);
 
+  // One enrichment slot, every outcome — the boundary writes the audit
+  // row from it (AD-42).
+  meta.toolAudit = {
+    tool: SEARCH_ROSTER_NAME,
+    argumentsRedacted: recordedFilters,
+    outcome: result.kind === 'refusal' ? `refusal:${result.reason}` : 'success',
+    toolMs,
+  };
+
   if (result.kind === 'refusal') {
-    await withTenant(deps.appPool, identity.tenantId, (client) =>
-      insertTenantMcpAuditEntry(client, {
-        requestId: meta.requestId,
-        actor: identity.sub,
-        role: identity.role,
-        httpMethod: 'POST',
-        rpcMethod: 'tools/call',
-        tool: SEARCH_ROSTER_NAME,
-        argumentsRedacted: recordedFilters,
-        outcome: `refusal:${result.reason}`,
-        authMs: Math.round(meta.authMs),
-        toolMs,
-        totalMs,
-      }),
-    );
     return {
       content: [{ type: 'text', text: REFUSAL_COPY[result.reason] ?? result.reason }],
       isError: true,
       structuredContent: { kind: 'refusal', reason: result.reason },
     };
   }
-
-  await withTenant(deps.appPool, identity.tenantId, (client) =>
-    insertTenantMcpAuditEntry(client, {
-      requestId: meta.requestId,
-      actor: identity.sub,
-      role: identity.role,
-      httpMethod: 'POST',
-      rpcMethod: 'tools/call',
-      tool: SEARCH_ROSTER_NAME,
-      argumentsRedacted: recordedFilters,
-      outcome: 'success',
-      authMs: Math.round(meta.authMs),
-      toolMs,
-      totalMs,
-    }),
-  );
 
   deps.logger.info({
     msg: 'tool_call',

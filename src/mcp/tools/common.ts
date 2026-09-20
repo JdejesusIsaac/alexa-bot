@@ -16,6 +16,21 @@ import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/proto
 import { type AuthedIdentity } from '../../auth/identity.js';
 import { type Logger } from '../../logging/logger.js';
 
+/**
+ * What a handler leaves behind for the boundary's audit row (AD-42).
+ * The HTTP layer writes exactly one `mcp_audit` row per `tools/call`
+ * request — including calls the SDK rejects before dispatch — and the
+ * handler enriches it through this slot. Append-only table, so the
+ * enrichment is staged here and folded in when the boundary writes.
+ */
+export interface ToolCallAudit {
+  readonly tool: string;
+  /** Tenant-safe by construction — which argument was used, never values. */
+  readonly argumentsRedacted: Record<string, unknown>;
+  readonly outcome: string;
+  readonly toolMs: number;
+}
+
 export interface RequestMeta {
   /** Verified caller identity — from this request's token, not the session. */
   readonly identity: AuthedIdentity;
@@ -24,6 +39,13 @@ export interface RequestMeta {
   readonly requestStartedAt: number;
   /** Token verification duration in ms (for per-stage tracing, T-41). */
   readonly authMs: number;
+  /**
+   * Audit enrichment written by the handler, read by the boundary after
+   * dispatch (AD-42). Mutable by design — it is the per-request slot,
+   * not session state. Absent after dispatch means the call was rejected
+   * before reaching a handler.
+   */
+  toolAudit?: ToolCallAudit;
 }
 
 export interface ToolDeps {

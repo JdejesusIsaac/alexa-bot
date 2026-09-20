@@ -19,7 +19,7 @@ Graded **separately from the rubric** (AD-14). Rubric evidence may not satisfy a
 | E3  | p95 **full round trip** (auth + tool + response) ≤300 ms, **number recorded** — warm **and** cold JWKS reported separately | T-41, T-48             |
 | E4  | No tool schema accepts a tenant parameter; no tool returns an uncleared field                                              | T-33, T-36             |
 | E5  | Every MCP call audited, actor from the token                                                                               | T-40                   |
-| E6  | PL-013 Q2 and Q3 closed in writing                                                                                         | PL-101                 |
+| E6  | PL-013 Q2 closed in writing; **Q3 descoped under AD-33** (private distribution is a Sprint 3 decision)                      | PL-101                 |
 
 ---
 

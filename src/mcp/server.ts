@@ -37,6 +37,17 @@ import {
 export const SERVER_NAME = 'parent-line';
 export const SERVER_VERSION = '2.0.0';
 
+/**
+ * Registered tool names. The HTTP boundary uses this to distinguish a
+ * `tools/call` rejected because the tool does not exist from one that
+ * reached dispatch and failed — the audit outcome differs (AD-42).
+ */
+export const TOOL_NAMES: ReadonlySet<string> = new Set([
+  LOOKUP_SCHOLAR_STATUS_NAME,
+  SEARCH_ROSTER_NAME,
+  ROSTER_SYNC_STATUS_NAME,
+]);
+
 export function createMcpServer(deps: ToolDeps): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
 

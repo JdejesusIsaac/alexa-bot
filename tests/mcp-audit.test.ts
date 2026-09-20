@@ -96,6 +96,102 @@ describe('PL-110 · T-40: every MCP call audited', () => {
     }
   });
 
+  it('pre-dispatch rejections still produce audit rows (F-1)', async () => {
+    const token = await server.mintToken({
+      sub: 'boundary-staff',
+      tenantId: TENANT_A,
+      role: 'staff',
+    });
+    const session = await client.connect({ token });
+
+    // Unknown tool — the SDK rejects before any handler runs. The
+    // rejection surfaces as result.isError (HTTP 200), not a JSON-RPC
+    // error field.
+    const unknown = await client.callTool(session, 'no_such_tool', {}, { token });
+    expect(
+      (unknown.body?.result as { isError?: boolean } | undefined)?.isError,
+    ).toBe(true);
+    expect(unknown.rawText).toContain('not found');
+
+    // Schema-level argument failure — rejected at dispatch, never
+    // reaches the handler (student_ref must be a string).
+    const badArgs = await client.callTool(
+      session,
+      'lookup_scholar_status',
+      { student_ref: 123 },
+      { token },
+    );
+    expect(
+      (badArgs.body?.result as { isError?: boolean } | undefined)?.isError,
+    ).toBe(true);
+
+    // Handler-level refusal — passes the SDK schema, fails the
+    // exactly-one-of refine inside the handler. Enrichment path.
+    const handlerRefusal = await client.callTool(
+      session,
+      'lookup_scholar_status',
+      { student_ref: 'A001', student_name: 'Maria Gonzalez' },
+      { token },
+    );
+    expect(refusalOf(handlerRefusal.body)).toBe('invalid_arguments');
+
+    // The boundary writes each row after the response is sent (AD-42),
+    // so the last call's row can lag this read — poll until it lands.
+    const mine = await (async () => {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const entries = await withTenant(server.db.appPool, TENANT_A, (c) =>
+          findMcpAuditEntries(c, 100),
+        );
+        const rows = entries.filter((e) => e.actor === 'boundary-staff');
+        const outcomes = rows.map((e) => e.outcome);
+        if (
+          (outcomes.includes('rejected:unknown_tool') &&
+            outcomes.includes('rejected:tool_call_failed') &&
+            outcomes.includes('refusal:invalid_arguments')) ||
+          Date.now() >= deadline
+        ) {
+          return rows;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    })();
+
+    const unknownRow = mine.find((e) => e.outcome === 'rejected:unknown_tool');
+    expect(unknownRow).toBeDefined();
+    expect(unknownRow!.tool).toBe('no_such_tool');
+
+    const failedRow = mine.find((e) => e.outcome === 'rejected:tool_call_failed');
+    expect(failedRow).toBeDefined();
+    expect(failedRow!.tool).toBe('lookup_scholar_status');
+
+    const refusedRow = mine.find((e) => e.outcome === 'refusal:invalid_arguments');
+    expect(refusedRow).toBeDefined();
+    expect(refusedRow!.tool).toBe('lookup_scholar_status');
+  });
+
+  it('authenticated method rejections are audited (F-1)', async () => {
+    const token = await server.mintToken({
+      sub: 'method-staff',
+      tenantId: TENANT_A,
+      role: 'staff',
+    });
+
+    const res = await fetch(server.mcpUrl, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(405);
+
+    const entries = await withTenant(server.db.appPool, TENANT_A, (c) =>
+      findMcpAuditEntries(c, 100),
+    );
+    const row = entries.find(
+      (e) => e.actor === 'method-staff' && e.outcome === 'rejected:method_not_allowed',
+    );
+    expect(row).toBeDefined();
+  });
+
   it('recorded arguments carry no student identifiers', async () => {
     const token = await server.mintToken({
       sub: 'privacy-staff',
@@ -169,37 +265,67 @@ describe('PL-110 · T-40: every MCP call audited', () => {
   });
 });
 
-describe('PL-110 · T-41: per-stage latency recorded', () => {
-  it('tool calls record auth_ms, tool_ms, and total_ms, all non-negative', async () => {
+describe('PL-110 · T-41: full round-trip latency, measured', () => {
+  it('200 sequential calls — p95 ≤300 ms, per stage, recorded with conditions', async () => {
     const token = await server.mintToken({
-      sub: 'timing-staff',
+      sub: 'latency-staff',
       tenantId: TENANT_A,
       role: 'staff',
     });
     const session = await client.connect({ token });
-    await client.callTool(
-      session,
-      'lookup_scholar_status',
-      { student_ref: 'A001' },
-      { token },
+
+    const clientTotals: number[] = [];
+    for (let i = 0; i < 200; i += 1) {
+      const start = performance.now();
+      const res = await client.callTool(
+        session,
+        'lookup_scholar_status',
+        { student_ref: 'A001' },
+        { token },
+      );
+      clientTotals.push(performance.now() - start);
+      expect(res.status).toBe(200);
+    }
+
+    // Per-stage numbers come from the audit trail — auth_ms, tool_ms,
+    // total_ms are recorded per call. The measurement is the point
+    // (eval F-2): a test asserting field presence cannot fail for latency.
+    // The boundary writes the row after the response is sent (AD-42), so
+    // the final call's row can lag the client's read — poll briefly.
+    const calls = await (async () => {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const entries = await withTenant(server.db.appPool, TENANT_A, (c) =>
+          findMcpAuditEntries(c, 500),
+        );
+        const mine = entries.filter(
+          (e) =>
+            e.actor === 'latency-staff' &&
+            e.tool === 'lookup_scholar_status' &&
+            e.outcome === 'success',
+        );
+        if (mine.length === 200 || Date.now() >= deadline) return mine;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    })();
+    expect(calls).toHaveLength(200);
+
+    const authP95 = percentile(calls.map((e) => e.auth_ms!), 0.95);
+    const toolP95 = percentile(calls.map((e) => e.tool_ms!), 0.95);
+    const totalP95 = percentile(calls.map((e) => e.total_ms!), 0.95);
+    const clientP95 = percentile(clientTotals, 0.95);
+
+    // Recorded with conditions per the T-41 spec: dataset size, local
+    // vs network, cache state. This number is the one E3 grades.
+    console.log(
+      `[T-41] 200 sequential tools/call, local Postgres + local JWKS (warm), ` +
+        `synthetic fixtures — auth p95 ${authP95}ms · tool p95 ${toolP95}ms · ` +
+        `server-total p95 ${totalP95}ms · client round-trip p95 ${clientP95.toFixed(1)}ms ` +
+        `(criterion ≤300ms; Alexa+ budget 500ms end-to-end)`,
     );
 
-    const entries = await withTenant(server.db.appPool, TENANT_A, (c) =>
-      findMcpAuditEntries(c, 20),
-    );
-    const entry = entries.find(
-      (e) =>
-        e.actor === 'timing-staff' &&
-        e.tool === 'lookup_scholar_status' &&
-        e.outcome === 'success',
-    );
-    expect(entry).toBeDefined();
-    expect(entry!.auth_ms).not.toBeNull();
-    expect(entry!.auth_ms!).toBeGreaterThanOrEqual(0);
-    expect(entry!.tool_ms).not.toBeNull();
-    expect(entry!.tool_ms!).toBeGreaterThanOrEqual(0);
-    expect(entry!.total_ms).not.toBeNull();
-    expect(entry!.total_ms!).toBeGreaterThanOrEqual(0);
+    expect(totalP95).toBeLessThanOrEqual(300);
+    expect(clientP95).toBeLessThanOrEqual(300);
   });
 });
 
