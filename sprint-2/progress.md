@@ -120,6 +120,13 @@ _Newest at the top. Copy the template, don't reformat it._
 
 ---
 
+### Session 8 — JWKS warming, re-issue rule, evaluator dispatch
+**Worked on:** E3 hardening (JWKS warm path), evaluator preparation
+**Done:** (a) Added `JWKS_REFRESH_MINUTES` config (default 10) + `TokenVerifier.warmJwksCache()` (jose `reload()`) + startup prefetch and refresh timer in `createMcpApp` (`warmJwksOnStart`, `jwksRefreshIntervalMs` options; `McpApp.warmJwks()` exposed; timer cleared in `close()`). Motivation: E3's cold number was measured against a request-path fetch the refresh timer now removes — warming had to land before the remote p95 run, not after. (b) `LocalAs.jwksFetchCount` + three new T-48-block tests: warm→no-fetch on request, construction prefetch + timer refetch, `warmJwksOnStart:false` opt-out. (c) **Re-issue rule written into `sprint-2/plan.md` evaluator requirements** — a second pass amends E1/E3/E6 only; rubric regraded only if code changed. (d) Dispatched the evaluator as a separate pass — not bundled with P1 (Sprint 1 re-issue is a different contract).
+**Decisions made:** refresh timer calls `reload()` unconditionally rather than relying on jose's `cacheMaxAge` expiry — every tick is a real fetch, no staleness window. `.env` claim fix still user-side.
+**Surprises:** none — jose 6 exposes `reload()`/`fresh`/`coolingDown` directly on the resolver.
+**Next action:** evaluator verdict → if clean, the remaining gates are all user-side (Auth0 Action namespace fix → probe --e2e → Claude Desktop; ASK CLI for Q3; weekday soak).
+
 ### Session 7 — verify, commit, serve smoke test
 **Worked on:** commit hygiene, dev-DB migration, serve smoke test
 **Done:** (a) `npm run verify` green — 23 files, 214 cases, 49/49 T-numbers (needed `DATABASE_URL`/`APP_DATABASE_URL` exported; vitest does not read `.env`). (b) Applied migrations 0002 + 0003 to the dev database — the first `npm run serve` smoke test logged `audit_write_failed: relation "mcp_audit" does not exist` until migrate ran. (c) Smoke test clean: PRM 200, unauthenticated POST → 401 (`missing_token`), audit write lands. (d) Committed the entire working tree in two commits: Sprint 1 corrective pass + soak harness, then the Sprint 2 MCP stack. `*.code-workspace` added to `.gitignore` (IDE artifact).

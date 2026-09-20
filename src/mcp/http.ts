@@ -74,6 +74,8 @@ export interface McpApp {
   sessionCount(): number;
   /** Drop the cached JWKS — forces one cold fetch on the next request (T-48). */
   resetJwksCache(): void;
+  /** Fetch the JWKS now, off the request path (E3). Throws if the fetch fails. */
+  warmJwks(): Promise<void>;
 }
 
 export interface McpAppOptions {
@@ -82,6 +84,13 @@ export interface McpAppOptions {
   readonly logger: Logger;
   /** Idle-session sweep interval. Default 60s; faster for tests. */
   readonly sweepIntervalMs?: number;
+  /**
+   * JWKS refresh interval. Default `config.jwksRefreshMinutes`; tests set
+   * milliseconds directly to observe the timer.
+   */
+  readonly jwksRefreshIntervalMs?: number;
+  /** Prefetch the JWKS at construction (default true). Tests may disable it. */
+  readonly warmJwksOnStart?: boolean;
 }
 
 export function createMcpApp(options: McpAppOptions): McpApp {
@@ -94,6 +103,35 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     tenantClaim: config.tenantClaim,
     roleClaim: config.roleClaim,
   });
+
+  // JWKS warming (E3): prefetch at construction and refresh on a timer,
+  // so the cold fetch — the worst case T-48 measures — happens off the
+  // request path after deploy and across AS key rotation. A failed warm
+  // is logged, not fatal: the next request pays the fetch itself.
+  const warmJwksLogged = async (): Promise<void> => {
+    const startedAt = performance.now();
+    try {
+      await verifier.warmJwksCache();
+      logger.info({
+        msg: 'jwks_warmed',
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+    } catch (err) {
+      logger.warn({
+        msg: 'jwks_warm_failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+  if (options.warmJwksOnStart !== false) {
+    void warmJwksLogged();
+  }
+  const jwksRefreshTimer = setInterval(
+    () => void warmJwksLogged(),
+    options.jwksRefreshIntervalMs ?? config.jwksRefreshMinutes * 60_000,
+  );
+  jwksRefreshTimer.unref();
+
   const sessions = new Map<string, SessionRecord>();
   const sweepTimer = setInterval(
     () => sweepIdleSessions(),
@@ -672,8 +710,10 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     handleRequest,
     sessionCount: () => sessions.size,
     resetJwksCache: () => verifier.resetJwksCache(),
+    warmJwks: () => verifier.warmJwksCache(),
     async close(): Promise<void> {
       clearInterval(sweepTimer);
+      clearInterval(jwksRefreshTimer);
       for (const [, record] of sessions) {
         await record.transport.close().catch(() => undefined);
       }

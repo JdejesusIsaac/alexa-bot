@@ -220,6 +220,7 @@ Sprint 1's evaluation returned 100/100 twice, dropped the exit-criteria table on
 - **Produce at least one finding, or state explicitly that one was sought and not found.** A weakest point identified and then argued away is a finding, not a footnote.
 - Audit every tool schema against its implementation (AD-15). A declared parameter with no behavior is a finding, not a TODO.
 - Run the adversarial pass including the two vectors Sprint 1 never tried: **timing/error-shape inference across tenants**, and **redaction against a name absent from the fixture list.**
+- **Re-issue rule — written before the first verdict exists.** A planned second pass amends E1/E3/E6 only; the rubric is regraded only if code changed between runs. Two evaluations of the same build produce one scoreboard, not two that disagree.
 
 ---
 

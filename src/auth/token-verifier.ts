@@ -16,6 +16,8 @@
  * JWKS is fetched once and cached (jose `createRemoteJWKSet`); the cold
  * path — first request after deploy or key rotation — is a network
  * fetch and is the realistic worst case for the latency budget (T-48).
+ * The host warms the cache at startup and on a refresh timer so the
+ * cold fetch happens off the request path (E3).
  */
 
 import { createRemoteJWKSet, jwtVerify, errors } from 'jose';
@@ -68,6 +70,18 @@ export class TokenVerifier {
    */
   resetJwksCache(): void {
     this.jwks = createRemoteJWKSet(new URL(this.options.jwksUrl));
+  }
+
+  /**
+   * Fetch the JWKS document now, off the request path (E3). jose's
+   * `reload()` bypasses the cooldown and refreshes the cache in place —
+   * used at startup and by the refresh timer so a request never pays
+   * the cold fetch after deploy or key rotation. Errors propagate to
+   * the caller, which logs; a failed warm only means the next request
+   * pays the fetch itself.
+   */
+  async warmJwksCache(): Promise<void> {
+    await this.jwks.reload();
   }
 
   async verify(authorizationHeader: string | undefined): Promise<VerifyResult> {

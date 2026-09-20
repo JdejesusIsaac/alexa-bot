@@ -36,6 +36,8 @@ export interface LocalAs {
     readonly omitRoleClaim?: boolean;
     readonly omitSubject?: boolean;
   }): Promise<string>;
+  /** How many times the JWKS document has been fetched — warmup tests. */
+  readonly jwksFetchCount: number;
   close(): Promise<void>;
 }
 
@@ -49,9 +51,12 @@ export async function startLocalAs(): Promise<LocalAs> {
   const kid = randomUUID();
   const publicJwk = await exportJWK(publicKey);
 
+  let jwksFetchCount = 0;
+
   const server: Server = await new Promise((resolve) => {
     const s = createServer((req, res) => {
       if (req.url === '/jwks.json') {
+        jwksFetchCount += 1;
         const body = JSON.stringify({
           keys: [{ ...publicJwk, kid, alg: 'RS256', use: 'sig' }],
         });
@@ -113,6 +118,9 @@ export async function startLocalAs(): Promise<LocalAs> {
   return {
     issuer,
     jwksUrl: `${base}/jwks.json`,
+    get jwksFetchCount() {
+      return jwksFetchCount;
+    },
     mintToken,
     close: () =>
       new Promise<void>((resolve, reject) => {

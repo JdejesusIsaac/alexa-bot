@@ -16,6 +16,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startTestMcpServer, type TestMcpServer } from './helpers/mcp-server.js';
 import { McpTestClient } from './helpers/mcp-client.js';
+import { createMcpApp } from '../src/mcp/http.js';
 import { TENANT_A } from '../src/fixtures/synthetic-data.js';
 
 let server: TestMcpServer;
@@ -175,6 +176,57 @@ describe('PL-113 · T-48: cold-JWKS latency', () => {
     // that the difference is one fetch, not many.
     expect(cold).toBeLessThan(warmMedian + 250);
     expect(cold).toBeLessThan(500); // Alexa+ hard budget headroom
+  });
+
+  it('an explicit warm fetches once, and the next request performs no fetch', async () => {
+    const token = await server.mintToken({ tenantId: TENANT_A });
+    const before = server.as.jwksFetchCount;
+
+    await server.app.warmJwks();
+    expect(server.as.jwksFetchCount).toBe(before + 1);
+
+    const res = await client.initialize({ token });
+    expect(res.status).toBe(200);
+    // The cache is warm — verification does not reach the network.
+    expect(server.as.jwksFetchCount).toBe(before + 1);
+  });
+
+  it('construction prefetches the JWKS and the refresh timer refetches it', async () => {
+    const before = server.as.jwksFetchCount;
+    const app = createMcpApp({
+      config: server.config,
+      appPool: server.db.appPool,
+      logger: server.logger,
+      jwksRefreshIntervalMs: 50,
+    });
+    try {
+      // Startup prefetch plus at least one refresh tick — polled, not
+      // assumed, since the warmup is fire-and-forget by design.
+      const deadline = Date.now() + 5_000;
+      while (server.as.jwksFetchCount < before + 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(server.as.jwksFetchCount).toBeGreaterThanOrEqual(before + 2);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('warmJwksOnStart: false performs no fetch at construction', async () => {
+    const before = server.as.jwksFetchCount;
+    const app = createMcpApp({
+      config: server.config,
+      appPool: server.db.appPool,
+      logger: server.logger,
+      warmJwksOnStart: false,
+      jwksRefreshIntervalMs: 60_000,
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(server.as.jwksFetchCount).toBe(before);
+    } finally {
+      await app.close();
+    }
   });
 });
 

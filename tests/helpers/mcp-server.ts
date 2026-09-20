@@ -38,6 +38,10 @@ export interface TestMcpServerOptions {
   readonly captureLogs?: boolean;
   /** Idle-session sweep interval; default 60s in prod, faster here. */
   readonly sweepIntervalMs?: number;
+  /** JWKS refresh interval; default 10min in prod, faster here. */
+  readonly jwksRefreshIntervalMs?: number;
+  /** Prefetch JWKS at app construction (default true). */
+  readonly warmJwksOnStart?: boolean;
 }
 
 export interface TestMcpServer {
@@ -159,6 +163,12 @@ export async function startTestMcpServer(
     logger,
     ...(options.sweepIntervalMs !== undefined
       ? { sweepIntervalMs: options.sweepIntervalMs }
+      : {}),
+    ...(options.jwksRefreshIntervalMs !== undefined
+      ? { jwksRefreshIntervalMs: options.jwksRefreshIntervalMs }
+      : {}),
+    ...(options.warmJwksOnStart !== undefined
+      ? { warmJwksOnStart: options.warmJwksOnStart }
       : {}),
   });
   server.on('request', (req, res) => {

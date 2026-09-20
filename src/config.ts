@@ -108,6 +108,13 @@ const schema = z.object({
 
   /** Idle-session TTL for `Mcp-Session-Id` (PL-113). */
   SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(60),
+
+  /**
+   * Proactive JWKS refresh interval (PL-113, E3). The server refetches
+   * keys on this cadence — off the request path — so a request never
+   * pays the cold fetch after deploy or AS key rotation.
+   */
+  JWKS_REFRESH_MINUTES: z.coerce.number().int().positive().default(10),
 });
 
 export type Config = Readonly<{
@@ -131,6 +138,7 @@ export type Config = Readonly<{
   clockSkewSeconds: number;
   allowedOrigins: readonly string[];
   sessionTtlMinutes: number;
+  jwksRefreshMinutes: number;
 }>;
 
 export class ConfigError extends Error {
@@ -202,5 +210,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         .filter((s) => s.length > 0),
     ),
     sessionTtlMinutes: raw.SESSION_TTL_MINUTES,
+    jwksRefreshMinutes: raw.JWKS_REFRESH_MINUTES,
   });
 }
