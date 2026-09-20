@@ -603,9 +603,11 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         extra: requestMeta,
       };
 
+      let dispatchFailed = false;
       try {
         await transport.handleRequest(req, res, message);
       } catch (err) {
+        dispatchFailed = true;
         logger.error({
           msg: 'request_failed',
           tenant_id: identity.tenantId,
@@ -617,12 +619,15 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         }
       }
 
+      const initOutcome = dispatchFailed
+        ? 'rejected:initialize_failed'
+        : 'initialized';
       logger.info({
         msg: 'mcp_request',
         tenant_id: identity.tenantId,
         request_id: requestId,
         rpc_method: 'initialize',
-        outcome: 'initialized',
+        outcome: initOutcome,
         auth_ms: Math.round(authMs),
         total_ms: Math.round(performance.now() - requestStartedAt),
       });
@@ -633,7 +638,7 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         authMs,
         'POST',
         'initialize',
-        'initialized',
+        initOutcome,
       );
       return;
     }
@@ -669,9 +674,11 @@ export function createMcpApp(options: McpAppOptions): McpApp {
       extra: requestMeta,
     };
 
+    let dispatchFailed = false;
     try {
       await record.transport.handleRequest(req, res, message);
     } catch (err) {
+      dispatchFailed = true;
       logger.error({
         msg: 'request_failed',
         tenant_id: identity.tenantId,
@@ -725,7 +732,11 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         },
       );
     } else {
-      const outcome = rpcMethod === null ? 'received' : rpcMethod.replaceAll('/', '_');
+      const outcome = dispatchFailed
+        ? 'rejected:dispatch_failed'
+        : rpcMethod === null
+          ? 'received'
+          : rpcMethod.replaceAll('/', '_');
       logger.info({
         msg: 'mcp_request',
         tenant_id: identity.tenantId,

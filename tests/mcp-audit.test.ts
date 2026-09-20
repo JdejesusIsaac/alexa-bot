@@ -135,6 +135,25 @@ describe('PL-110 · T-40: every MCP call audited', () => {
     );
     expect(refusalOf(handlerRefusal.body)).toBe('invalid_arguments');
 
+    // Malformed call — params.name is not even a string. Raw fetch
+    // because callTool() always serializes a string name.
+    const malformed = await fetch(server.mcpUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-session-id': session.sessionId,
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 42, arguments: {} },
+      }),
+    });
+    expect(malformed.status).toBe(200);
+
     // The boundary writes each row after the response is sent (AD-42),
     // so the last call's row can lag this read — poll until it lands.
     const mine = await (async () => {
@@ -148,6 +167,7 @@ describe('PL-110 · T-40: every MCP call audited', () => {
         if (
           (outcomes.includes('rejected:unknown_tool') &&
             outcomes.includes('rejected:tool_call_failed') &&
+            outcomes.includes('rejected:malformed_tool_call') &&
             outcomes.includes('refusal:invalid_arguments')) ||
           Date.now() >= deadline
         ) {
@@ -168,6 +188,11 @@ describe('PL-110 · T-40: every MCP call audited', () => {
     const refusedRow = mine.find((e) => e.outcome === 'refusal:invalid_arguments');
     expect(refusedRow).toBeDefined();
     expect(refusedRow!.tool).toBe('lookup_scholar_status');
+
+    const malformedRow = mine.find(
+      (e) => e.outcome === 'rejected:malformed_tool_call',
+    );
+    expect(malformedRow).toBeDefined();
   });
 
   it('authenticated method rejections are audited (F-1)', async () => {

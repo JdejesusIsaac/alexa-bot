@@ -242,8 +242,11 @@ Attempt each, report what worked, fix nothing.
 | ---------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | 2026-09-17 | T-01…T-49             | **49/49 passing** (23 files, 214 cases)                                                                                                                              | Local Postgres via `.env`, Node 20, `npm test`, serial files, database-per-run |
 | 2026-09-16 | T-01…T-05 (gate only) | **Red, by design** — P2 drill: `roster_entries` policy weakened to `using (true)`; T-01 failed `expected 6 to be 3`; reverted byte-identical; full gate re-run green | Local; remote CI push deliberately not executed                                |
+| 2026-09-21 | T-01…T-49             | **49/49 passing** (23 files, 219 cases) — post-eval repair: boundary-owned `tools/call` audit (F-1), measured T-41/T-48 (F-2), T-32 signal recorded (F-3), bare `/health` (F-4), outcome-label enforcement (F-5) | Local Postgres via `.env`, Node 20, `npm test`, serial files, database-per-run |
 
 Notes from the 2026-09-17 run: T-41's per-stage latency asserts presence and non-negativity (production p95 is E3's job, under real conditions); T-42's timing distributions over 200 calls per path compared medians and p90s within tolerance; T-48's cold-JWKS path measured against a locally served JWKS — network cost is one localhost fetch, so the absolute ceiling (<500 ms) is asserted, and the remote number waits for PL-112.
+
+Notes from the 2026-09-21 run: T-41 now implements its spec — 200 sequential `tools/call`s with per-stage p95 from the audit trail plus client round-trip, recorded with conditions (local: auth 0 ms, tool ~3 ms, server-total ~5 ms, client p95 ~5.3 ms against a ≤300 ms criterion). T-48 records the cold-JWKS number (local ~2.5 ms vs ~2 ms warm). The F-1 test block exercises all four pre-dispatch/refusal audit outcomes including `rejected:malformed_tool_call`. Remote numbers remain unmeasured pending PL-112.
 
 ---
 
