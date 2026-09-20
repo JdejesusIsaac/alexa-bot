@@ -47,10 +47,11 @@ Graded separately from the rubric (AD-14). Sprint 1 kept two lists that disagree
 
 - Evaluator mischaracterized T-18's assertion (≤500 ms) when the code asserts ≤150 ms — verify against source, never against a report's characterization
 - Marking a task ✅ when code is written rather than when the AC is met (PL-005) — use 🔵 for code-complete-but-unverified
+- A test asserting field presence is not a measurement — T-41 passed while asserting nothing about latency; spec-mandated measurements need the sample loop AND the recorded number (eval F-2)
+- Auditing delegated to tool handlers misses SDK pre-dispatch rejections (unknown tool, bad args) — the HTTP layer must audit `tools/call` rejections itself (eval F-1)
 - `raw_data->>$2` returns nothing — it is parallel arrays `{headers, values}`, not a key-value map
 - `->>` won't take a bigint from `WITH ORDINALITY` — needs `::int`
 - Zod `.nullable()` without `.default(null)` still requires the key present
-- RLS `WITH CHECK` rejects INSERT omitting `tenant_id`
 - `exactOptionalPropertyTypes` rejects the JWT object form — positional overload required
 - Auth0 silently drops custom claims whose namespace is not a valid URL (`https://parent-line/` — bare host, no TLD): no error at authorize, token, or in tenant logs; cost ~2h across 6 probe runs chasing deployment instead of naming
 - `source .env` crashes on multi-line `GOOGLE_SERVICE_ACCOUNT_JSON` — vitest needs `DATABASE_URL`/`APP_DATABASE_URL` exported explicitly
@@ -122,10 +123,10 @@ _Newest at the top. Copy the template, don't reformat it._
 
 ### Session 8 — JWKS warming, re-issue rule, evaluator dispatch
 **Worked on:** E3 hardening (JWKS warm path), evaluator preparation
-**Done:** (a) Added `JWKS_REFRESH_MINUTES` config (default 10) + `TokenVerifier.warmJwksCache()` (jose `reload()`) + startup prefetch and refresh timer in `createMcpApp` (`warmJwksOnStart`, `jwksRefreshIntervalMs` options; `McpApp.warmJwks()` exposed; timer cleared in `close()`). Motivation: E3's cold number was measured against a request-path fetch the refresh timer now removes — warming had to land before the remote p95 run, not after. (b) `LocalAs.jwksFetchCount` + three new T-48-block tests: warm→no-fetch on request, construction prefetch + timer refetch, `warmJwksOnStart:false` opt-out. (c) **Re-issue rule written into `sprint-2/plan.md` evaluator requirements** — a second pass amends E1/E3/E6 only; rubric regraded only if code changed. (d) Dispatched the evaluator as a separate pass — not bundled with P1 (Sprint 1 re-issue is a different contract).
+**Done:** (a) Added `JWKS_REFRESH_MINUTES` config (default 10) + `TokenVerifier.warmJwksCache()` (jose `reload()`) + startup prefetch and refresh timer in `createMcpApp` (`warmJwksOnStart`, `jwksRefreshIntervalMs` options; `McpApp.warmJwks()` exposed; timer cleared in `close()`). Motivation: E3's cold number was measured against a request-path fetch the refresh timer now removes — warming had to land before the remote p95 run, not after. (b) `LocalAs.jwksFetchCount` + three new T-48-block tests: warm→no-fetch on request, construction prefetch + timer refetch, `warmJwksOnStart:false` opt-out. (c) **Re-issue rule written into `sprint-2/plan.md` evaluator requirements** — a second pass amends E1/E3/E6 only; rubric regraded only if code changed. (d) Ran the evaluator as an isolated subagent pass (phase flip `evaluation`→`implementation`, contract-only inputs, no seeded findings). **Verdict: Rubric PASS 93/100, isolation gate green, zero hard-fails — sprint NOT complete.** Findings: **F-1 (MED-HIGH)** reachable MCP calls write no audit row — SDK rejects unknown tool/invalid args pre-dispatch, `search_roster` invalid-args branch doesn't audit, authenticated 405s unaudited (E5 violated). **F-2 (MED)** T-41 asserts field presence, not the 200-call p95 the spec requires; T-48 asserts bounds but records no number (E3 root cause). **F-3 (LOW)** T-32 test header doesn't record the 401 branch signal. **F-4 (LOW/info)** unauthenticated `GET /health` discloses live session count.
 **Decisions made:** refresh timer calls `reload()` unconditionally rather than relying on jose's `cacheMaxAge` expiry — every tick is a real fetch, no staleness window. `.env` claim fix still user-side.
-**Surprises:** none — jose 6 exposes `reload()`/`fresh`/`coolingDown` directly on the resolver.
-**Next action:** evaluator verdict → if clean, the remaining gates are all user-side (Auth0 Action namespace fix → probe --e2e → Claude Desktop; ASK CLI for Q3; weekday soak).
+**Surprises:** the evaluator found a genuinely new attack surface (pre-dispatch rejections evade audit) — the green suite did not cover it. jose 6 exposes `reload()`/`fresh`/`coolingDown` directly on the resolver.
+**Next action:** failure loop — findings become the sprint input. Fix F-1 (audit at HTTP layer for `tools/call` rejections + 405s; search_roster invalid-args parity), F-2 (T-41 implements its spec: 200 calls, recorded warm p95; T-48 records the cold number), F-3 (one-line doc). F-4 needs a decision: drop `sessions` from `/health` or gate it. Then re-issue scoped per the new rule — code changed, so the touched rubric rows regrade; E1/E3( remote )/E6 remain user-gated.
 
 ### Session 7 — verify, commit, serve smoke test
 **Worked on:** commit hygiene, dev-DB migration, serve smoke test
