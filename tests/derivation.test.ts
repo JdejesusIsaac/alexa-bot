@@ -11,10 +11,7 @@ import { findByStudentRef } from '../src/repositories/roster-entries.js';
 import { deriveHolds } from '../src/derivation/derive-holds.js';
 import { toParentFacing } from '../src/derivation/parent-facing.js';
 import { canonicalRowSchema } from '../src/schema/canonical-row.js';
-import {
-  TENANT_A,
-  TENANT_B,
-} from '../src/fixtures/synthetic-data.js';
+import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 
 /**
  * PL-012 tests — hold derivation as config.

@@ -25,9 +25,7 @@ export interface DerivationRule {
  * Retrieve all derivation rules for the current tenant context.
  * RLS ensures only the active tenant's rules are visible.
  */
-export async function findByTenant(
-  client: PoolClient,
-): Promise<DerivationRule[]> {
+export async function findByTenant(client: PoolClient): Promise<DerivationRule[]> {
   const res = await client.query<DerivationRule>(
     `select * from derivation_rules order by rule_name`,
   );

@@ -59,10 +59,9 @@ describe('T-10 · Audit log is append-only at the database', () => {
     // Attempt UPDATE as the app role — must fail at the DB level
     await expect(
       withTenant(db.appPool, TENANT_A, async (client) => {
-        await client.query(
-          `update audit_log set outcome = 'tampered' where id = $1`,
-          [entry.id],
-        );
+        await client.query(`update audit_log set outcome = 'tampered' where id = $1`, [
+          entry.id,
+        ]);
       }),
     ).rejects.toThrow();
   });
@@ -120,7 +119,12 @@ describe('Audit entry integrity', () => {
         actor: 'admin@example.com',
         action: 'getScholarStatus',
         subjectStudentRef: 'A003',
-        fieldsDisclosed: ['attendance_status', 'hold_type', 'hold_source', 'release_time'],
+        fieldsDisclosed: [
+          'attendance_status',
+          'hold_type',
+          'hold_source',
+          'release_time',
+        ],
         outcome: 'success',
       });
     });

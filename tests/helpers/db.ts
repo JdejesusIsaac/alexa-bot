@@ -93,9 +93,7 @@ export async function provisionTestDb(): Promise<TestDb> {
 
     // Ensure the app role can connect to this database and has a known
     // password for tests.
-    await owner.query(
-      `alter role ${APP_ROLE} login password '${APP_ROLE_PASSWORD}'`,
-    );
+    await owner.query(`alter role ${APP_ROLE} login password '${APP_ROLE_PASSWORD}'`);
     await owner.query(`grant connect on database ${dbName} to ${APP_ROLE}`);
   } finally {
     await owner.end();

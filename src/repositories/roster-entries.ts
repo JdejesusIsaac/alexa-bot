@@ -66,9 +66,7 @@ export async function findByStudentName(
  * Count roster entries for the current tenant. Used by sync to record
  * how many rows landed.
  */
-export async function countEntries(
-  client: PoolClient,
-): Promise<number> {
+export async function countEntries(client: PoolClient): Promise<number> {
   const res = await client.query<{ count: string }>(
     `select count(*)::text as count from roster_entries`,
   );
@@ -76,13 +74,83 @@ export async function countEntries(
 }
 
 /**
+ * Search the current tenant's roster (PL-108). Filters are optional and
+ * composable; every declared filter is applied — a declared-but-ignored
+ * filter makes the model confidently assert a narrowing that never
+ * happened (AD-15, T-43).
+ *
+ * Returns the page of entries and the total match count, so an empty
+ * page is distinguishable from a failed query (never an empty success
+ * standing in for a failure).
+ */
+export interface RosterSearchFilters {
+  readonly section?: string;
+  readonly holdType?: string;
+  readonly attendanceStatus?: string;
+}
+
+export interface RosterSearchPage {
+  readonly entries: readonly RosterEntry[];
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export async function searchRosterEntries(
+  client: PoolClient,
+  filters: RosterSearchFilters,
+  pagination: { limit: number; offset: number },
+): Promise<RosterSearchPage> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.section !== undefined) {
+    params.push(filters.section);
+    where.push(`section = $${params.length}`);
+  }
+  if (filters.holdType !== undefined) {
+    params.push(filters.holdType);
+    where.push(`hold_type = $${params.length}`);
+  }
+  if (filters.attendanceStatus !== undefined) {
+    params.push(filters.attendanceStatus);
+    where.push(`attendance_status = $${params.length}`);
+  }
+
+  const whereSql = where.length > 0 ? `where ${where.join(' and ')}` : '';
+
+  const countRes = await client.query<{ count: string }>(
+    `select count(*)::text as count from roster_entries ${whereSql}`,
+    params,
+  );
+  const total = parseInt(countRes.rows[0]!.count, 10);
+
+  params.push(pagination.limit);
+  const limitIdx = params.length;
+  params.push(pagination.offset);
+  const offsetIdx = params.length;
+
+  const res = await client.query<RosterEntry>(
+    `select * from roster_entries ${whereSql}
+     order by student_ref asc
+     limit $${limitIdx} offset $${offsetIdx}`,
+    params,
+  );
+
+  return {
+    entries: res.rows,
+    total,
+    limit: pagination.limit,
+    offset: pagination.offset,
+  };
+}
+
+/**
  * Delete all roster entries for the current tenant. Used by the sync
  * scheduler before re-ingesting to ensure idempotency (T-11). RLS
  * ensures only the active tenant's rows are affected.
  */
-export async function deleteAllEntries(
-  client: PoolClient,
-): Promise<number> {
+export async function deleteAllEntries(client: PoolClient): Promise<number> {
   const res = await client.query(`delete from roster_entries`);
   return res.rowCount ?? 0;
 }

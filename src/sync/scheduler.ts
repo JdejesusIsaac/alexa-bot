@@ -21,7 +21,11 @@
 
 import { type Pool } from 'pg';
 import { withTenant } from '../db/tenant-context.js';
-import { type SheetConnector, type SheetData, ConnectorError } from '../connector/sheet-connector.js';
+import {
+  type SheetConnector,
+  type SheetData,
+  ConnectorError,
+} from '../connector/sheet-connector.js';
 import { findByTenant as findMappings } from '../repositories/column-mappings.js';
 import { findByTenant as findRules } from '../repositories/derivation-rules.js';
 import { ingestSheet, type IngestResult } from './ingest.js';
@@ -85,10 +89,7 @@ export async function runSync(
         rowsQuarantined: 0,
         outcome: 'failure',
       });
-      const errorMsg =
-        err instanceof ConnectorError
-          ? err.name
-          : 'unknown error';
+      const errorMsg = err instanceof ConnectorError ? err.name : 'unknown error';
       return {
         kind: 'failure',
         sync: failedSync,
@@ -100,12 +101,7 @@ export async function runSync(
     await deleteAllEntries(client);
     await deleteAllQuarantinedRows(client);
 
-    const ingest = await ingestSheet(
-      client,
-      sheetData,
-      mappings,
-      rules,
-    );
+    const ingest = await ingestSheet(client, sheetData, mappings, rules);
 
     return {
       kind: 'success',

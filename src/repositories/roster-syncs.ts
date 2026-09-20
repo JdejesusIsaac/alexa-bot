@@ -28,9 +28,7 @@ export interface RosterSync {
  * Create a new sync record at the start of a sync run.
  * The tenant_id is set by RLS from `app.tenant_id`.
  */
-export async function createSync(
-  client: PoolClient,
-): Promise<RosterSync> {
+export async function createSync(client: PoolClient): Promise<RosterSync> {
   const res = await client.query<RosterSync>(
     `insert into roster_syncs (tenant_id, started_at, rows_in, rows_valid, rows_quarantined, outcome)
      values (current_setting('app.tenant_id')::uuid, now(), 0, 0, 0, 'success')
@@ -75,9 +73,7 @@ export async function finalizeSync(
 /**
  * Find the latest sync record for the current tenant.
  */
-export async function findLatestSync(
-  client: PoolClient,
-): Promise<RosterSync | null> {
+export async function findLatestSync(client: PoolClient): Promise<RosterSync | null> {
   const res = await client.query<RosterSync>(
     `select * from roster_syncs order by started_at desc limit 1`,
   );

@@ -145,10 +145,7 @@ describe('T-05 · Application role cannot bypass RLS', () => {
         [table],
       );
       expect(res.rows.length, `table ${table} should exist`).toBe(1);
-      expect(
-        res.rows[0]!.relrowsecurity,
-        `${table} must have RLS enabled`,
-      ).toBe(true);
+      expect(res.rows[0]!.relrowsecurity, `${table} must have RLS enabled`).toBe(true);
       expect(
         res.rows[0]!.relforcerowsecurity,
         `${table} must have FORCE RLS — without it the owner bypasses policies silently`,
@@ -163,9 +160,7 @@ describe('T-01 · RLS scopes reads to the active tenant', () => {
   it('returns only tenant A rows when app.tenant_id is set to A', async () => {
     const client = await db.appPool.connect();
     try {
-      await client.query(`select set_config('app.tenant_id', $1, false)`, [
-        TENANT_A,
-      ]);
+      await client.query(`select set_config('app.tenant_id', $1, false)`, [TENANT_A]);
       const res = await client.query(`select * from roster_entries`);
       expect(res.rows.length).toBe(3);
       for (const row of res.rows) {
@@ -180,9 +175,7 @@ describe('T-01 · RLS scopes reads to the active tenant', () => {
   it('returns only tenant B rows when app.tenant_id is set to B', async () => {
     const client = await db.appPool.connect();
     try {
-      await client.query(`select set_config('app.tenant_id', $1, false)`, [
-        TENANT_B,
-      ]);
+      await client.query(`select set_config('app.tenant_id', $1, false)`, [TENANT_B]);
       const res = await client.query(`select * from roster_entries`);
       expect(res.rows.length).toBe(3);
       for (const row of res.rows) {
@@ -220,12 +213,10 @@ describe('T-02 · Unset tenant context does not return everything', () => {
 // ── T-03: Name collision does not cross tenants ──────────────────────
 
 describe('T-03 · Name collision does not cross tenants', () => {
-  it('returns A\'s Daniel Reyes, not B\'s', async () => {
+  it("returns A's Daniel Reyes, not B's", async () => {
     const client = await db.appPool.connect();
     try {
-      await client.query(`select set_config('app.tenant_id', $1, false)`, [
-        TENANT_A,
-      ]);
+      await client.query(`select set_config('app.tenant_id', $1, false)`, [TENANT_A]);
       const res = await client.query(
         `select * from roster_entries where student_name = 'Daniel Reyes'`,
       );
@@ -239,12 +230,10 @@ describe('T-03 · Name collision does not cross tenants', () => {
     }
   });
 
-  it('returns B\'s Daniel Reyes, not A\'s', async () => {
+  it("returns B's Daniel Reyes, not A's", async () => {
     const client = await db.appPool.connect();
     try {
-      await client.query(`select set_config('app.tenant_id', $1, false)`, [
-        TENANT_B,
-      ]);
+      await client.query(`select set_config('app.tenant_id', $1, false)`, [TENANT_B]);
       const res = await client.query(
         `select * from roster_entries where student_name = 'Daniel Reyes'`,
       );

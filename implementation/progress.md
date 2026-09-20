@@ -28,9 +28,9 @@ PL-001 ✅ → PL-002 ✅ → PL-003 ✅ → PL-004 ✅ → PL-011 ✅ → PL-01
 
 **Blocked on:** nothing for PL-001–PL-004. **Resolved:** the container-runtime blocker is gone — AD-11 replaces Testcontainers with a real local Postgres (16.14 already running) and a database-per-run, with T-05 promoted to a blocking precondition because a dev superuser silently bypasses RLS. PL-005 still needs Google Sheets OAuth credentials and a test sheet. Open question 9 (authorization server) is Sprint 2, not this sprint.
 
-**Soak status:** not started · 0 / 10 business days
+**Soak status:** harness built 2026-09-20 — `npm run soak:day` → `soak/soak-log.md` · **0 / 10 counted business days.** First run 2026-09-20 recorded but not counted (Sunday). Observed: 12 calls across both synthetic tenants, p50 1.35 ms, p95 4.91 ms, audit completeness 100%, cross-tenant leakage probe clean. Day 1 counts on the next weekday run.
 
-**Exit criteria:** ⬜ 10-day soak · ✅ zero cross-tenant leakage (T-01…T-05, T-22, T-23) · ✅ p95 ≤150 ms (1.0ms measured) · ✅ zero PII in logs (T-09) · 🟡 PL-013 go/no-go **partially** written (Q1 answered; Q2/Q3 blocked on credentials)
+**Exit criteria:** 🟡 10-day soak (harness live, 0 / 10 counted) · ✅ zero cross-tenant leakage (T-01…T-05, T-22, T-23) · ✅ p95 ≤150 ms (1.0ms measured) · ✅ zero PII in logs (T-09) · 🟡 PL-013 go/no-go **partially** written (Q1 answered; **Q2 answered 2026-09-17** — Auth0 honors RFC 8707, see sprint-2/research.md §8; **Q3 still blocked** — no ASK CLI on the workstation)
 
 ---
 

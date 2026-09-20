@@ -4,7 +4,10 @@ import { provisionTestDb } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../src/connector/fixture-sheet-connector.js';
-import { getScholarStatus, type ScholarStatusResult } from '../src/services/scholar-status.js';
+import {
+  getScholarStatus,
+  type ScholarStatusResult,
+} from '../src/services/scholar-status.js';
 import {
   TENANT_A,
   TENANT_B,

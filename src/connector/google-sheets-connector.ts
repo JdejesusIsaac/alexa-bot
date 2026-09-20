@@ -37,9 +37,7 @@ export class GoogleSheetsConnector implements SheetConnector {
     try {
       credentials = JSON.parse(serviceAccountJson) as Record<string, string>;
     } catch {
-      throw new ConnectorAuthError(
-        'GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON',
-      );
+      throw new ConnectorAuthError('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON');
     }
 
     const email = credentials.client_email;
@@ -68,9 +66,7 @@ export class GoogleSheetsConnector implements SheetConnector {
       }
 
       const headers = (values[0] ?? []).map((v) => String(v ?? ''));
-      const rows = values.slice(1).map((row) =>
-        row.map((v) => String(v ?? '')),
-      );
+      const rows = values.slice(1).map((row) => row.map((v) => String(v ?? '')));
 
       return { headers, rows };
     } catch (err: unknown) {
@@ -92,7 +88,5 @@ function mapError(err: unknown): never {
     throw new ConnectorNotFoundError(e?.message ?? 'Sheet not found');
   }
 
-  throw new ConnectorNetworkError(
-    e?.message ?? 'Unexpected Google Sheets API error',
-  );
+  throw new ConnectorNetworkError(e?.message ?? 'Unexpected Google Sheets API error');
 }

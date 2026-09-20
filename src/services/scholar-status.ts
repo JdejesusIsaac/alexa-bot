@@ -101,9 +101,7 @@ export async function getScholarStatus(
     // on), report sync_failed — more actionable than just "stale."
     const latestSync = await findLatestSync(client);
     const reason =
-      latestSync && latestSync.outcome === 'failure'
-        ? 'sync_failed'
-        : 'roster_stale';
+      latestSync && latestSync.outcome === 'failure' ? 'sync_failed' : 'roster_stale';
 
     await insertAuditEntry(client, {
       actor,
@@ -183,10 +181,7 @@ export async function getScholarStatus(
  * Build the success result from a roster entry, applying parent-facing
  * filtering for derived holds (Rule 9).
  */
-function buildResult(
-  entry: RosterEntry,
-  caller: CallerType,
-): ScholarStatusResult {
+function buildResult(entry: RosterEntry, caller: CallerType): ScholarStatusResult {
   if (caller === 'staff') {
     return {
       kind: 'success',

@@ -79,13 +79,36 @@ export async function countQuarantined(
 }
 
 /**
+ * Quarantine summary with reasons for the current tenant's most recent
+ * sync (PL-109). Admins see counts and reasons — never row contents,
+ * which may include unvalidated free text.
+ */
+export interface QuarantineSummary {
+  readonly total: number;
+  readonly byReason: ReadonlyArray<{ reason: string; count: number }>;
+}
+
+export async function summarizeQuarantine(
+  client: PoolClient,
+): Promise<QuarantineSummary> {
+  const res = await client.query<{ reason: string; count: string }>(
+    `select reason, count(*)::text as count from quarantined_rows
+     group by reason order by count desc, reason asc`,
+  );
+  const byReason = res.rows.map((r) => ({
+    reason: r.reason,
+    count: parseInt(r.count, 10),
+  }));
+  const total = byReason.reduce((sum, r) => sum + r.count, 0);
+  return { total, byReason };
+}
+
+/**
  * Delete all quarantined rows for the current tenant. Used by the sync
  * scheduler before re-ingesting to ensure idempotency (T-11). RLS
  * ensures only the active tenant's rows are affected.
  */
-export async function deleteAllQuarantinedRows(
-  client: PoolClient,
-): Promise<number> {
+export async function deleteAllQuarantinedRows(client: PoolClient): Promise<number> {
   const res = await client.query(`delete from quarantined_rows`);
   return res.rowCount ?? 0;
 }

@@ -132,10 +132,7 @@ describe('Repository layer · audit-log', () => {
     expect(entry.action).toBe('getScholarStatus');
     expect(entry.subject_student_ref).toBe('A001');
     expect(entry.outcome).toBe('success');
-    expect(entry.fields_disclosed).toEqual([
-      'attendance_status',
-      'hold_source',
-    ]);
+    expect(entry.fields_disclosed).toEqual(['attendance_status', 'hold_source']);
   });
 
   it('findByStudentRef returns audit entries only for the active tenant', async () => {

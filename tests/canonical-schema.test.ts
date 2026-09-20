@@ -2,10 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
 import { provisionTestDb } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
-import {
-  findByTenant,
-  insertMapping,
-} from '../src/repositories/column-mappings.js';
+import { findByTenant, insertMapping } from '../src/repositories/column-mappings.js';
 import { mapRow } from '../src/mapping/mapper.js';
 import { MappingError } from '../src/schema/canonical-row.js';
 
@@ -48,8 +45,14 @@ afterAll(async () => {
 describe('Column-mapping repository', () => {
   it('inserts and retrieves mappings within tenant A', async () => {
     await withTenant(db.appPool, TENANT_A, async (client) => {
-      await insertMapping(client, { sheetHeader: 'Scholar', canonicalField: 'student_name' });
-      await insertMapping(client, { sheetHeader: 'Out Time', canonicalField: 'release_time' });
+      await insertMapping(client, {
+        sheetHeader: 'Scholar',
+        canonicalField: 'student_name',
+      });
+      await insertMapping(client, {
+        sheetHeader: 'Out Time',
+        canonicalField: 'release_time',
+      });
       await insertMapping(client, { sheetHeader: 'ID', canonicalField: 'student_ref' });
     });
 
@@ -71,9 +74,18 @@ describe('Column-mapping repository', () => {
 
   it('tenant B can have its own independent mappings', async () => {
     await withTenant(db.appPool, TENANT_B, async (client) => {
-      await insertMapping(client, { sheetHeader: 'Student Name', canonicalField: 'student_name' });
-      await insertMapping(client, { sheetHeader: 'Release', canonicalField: 'release_time' });
-      await insertMapping(client, { sheetHeader: 'Student ID', canonicalField: 'student_ref' });
+      await insertMapping(client, {
+        sheetHeader: 'Student Name',
+        canonicalField: 'student_name',
+      });
+      await insertMapping(client, {
+        sheetHeader: 'Release',
+        canonicalField: 'release_time',
+      });
+      await insertMapping(client, {
+        sheetHeader: 'Student ID',
+        canonicalField: 'student_ref',
+      });
     });
 
     const mappingsB = await withTenant(db.appPool, TENANT_B, async (client) => {
@@ -81,9 +93,11 @@ describe('Column-mapping repository', () => {
     });
 
     expect(mappingsB.length).toBe(3);
-    expect(mappingsB.map((m) => m.sheet_header).sort()).toEqual(
-      ['Release', 'Student ID', 'Student Name'],
-    );
+    expect(mappingsB.map((m) => m.sheet_header).sort()).toEqual([
+      'Release',
+      'Student ID',
+      'Student Name',
+    ]);
   });
 });
 
@@ -143,8 +157,14 @@ describe('T-19 · Advisor-notes column never enters a canonical row', () => {
 describe('T-20 · do_not_call survives mapping intact', () => {
   it('coerces "TRUE" to true', async () => {
     await withTenant(db.appPool, TENANT_A, async (client) => {
-      await insertMapping(client, { sheetHeader: 'DO NOT CALL', canonicalField: 'do_not_call' });
-      await insertMapping(client, { sheetHeader: 'Missing ID', canonicalField: 'missing_id' });
+      await insertMapping(client, {
+        sheetHeader: 'DO NOT CALL',
+        canonicalField: 'do_not_call',
+      });
+      await insertMapping(client, {
+        sheetHeader: 'Missing ID',
+        canonicalField: 'missing_id',
+      });
     });
     const mappingsA = await withTenant(db.appPool, TENANT_A, async (client) => {
       return findByTenant(client);

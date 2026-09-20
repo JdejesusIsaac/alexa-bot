@@ -85,7 +85,15 @@ describe('PL-006 · validateRow (unit)', () => {
   });
 
   it('accepts all known attendance statuses', () => {
-    for (const status of ['Present', 'Absent', 'Tardy', 'Late', 'Early Dismissal', 'Excused', 'Unexcused']) {
+    for (const status of [
+      'Present',
+      'Absent',
+      'Tardy',
+      'Late',
+      'Early Dismissal',
+      'Excused',
+      'Unexcused',
+    ]) {
       const row = makeCanonicalRow({ attendance_status: status });
       expect(validateRow(row)).toEqual({ valid: true });
     }

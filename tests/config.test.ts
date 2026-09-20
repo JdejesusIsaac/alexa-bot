@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from '../src/config.js';
 
-const base = { DATABASE_URL: 'postgres://owner@localhost:5432/parentline' };
+const base = {
+  DATABASE_URL: 'postgres://owner@localhost:5432/parentline',
+  RESOURCE_URL: 'https://parentline.example.org',
+  AS_ISSUER: 'https://auth.example.org',
+  AS_JWKS_URL: 'https://auth.example.org/.well-known/jwks.json',
+  EXPECTED_AUDIENCE: 'https://parentline.example.org',
+};
 
 describe('loadConfig', () => {
   it('applies defaults for optional settings', () => {
@@ -65,5 +71,36 @@ describe('loadConfig', () => {
     const cfg = loadConfig({ ...base, TENANT_ID: 'some-campus' });
     expect(Object.keys(cfg)).not.toContain('tenantId');
     expect(JSON.stringify(cfg)).not.toContain('some-campus');
+  });
+
+  it('defaults the audience to the resource URL in development (PL-103)', () => {
+    const { EXPECTED_AUDIENCE: _omit, ...withoutAudience } = base;
+    const cfg = loadConfig({ ...withoutAudience });
+    expect(cfg.expectedAudience).toBe(cfg.resourceUrl);
+  });
+
+  it('requires an explicit audience in production — token passthrough has no safe default', () => {
+    const { EXPECTED_AUDIENCE: _omit, ...withoutAudience } = base;
+    expect(() =>
+      loadConfig({
+        ...withoutAudience,
+        NODE_ENV: 'production',
+        APP_DATABASE_URL: 'postgres://app@localhost:5432/parentline',
+      }),
+    ).toThrow(/EXPECTED_AUDIENCE is required in production/);
+  });
+
+  it('normalizes a trailing slash off the resource URL (PRM stability, T-30)', () => {
+    const cfg = loadConfig({ ...base, RESOURCE_URL: 'https://parentline.example.org/' });
+    expect(cfg.resourceUrl).toBe('https://parentline.example.org');
+  });
+
+  it('parses allowed origins into a frozen, trimmed list (T-49)', () => {
+    const cfg = loadConfig({
+      ...base,
+      ALLOWED_ORIGINS: 'https://a.example, https://b.example ,',
+    });
+    expect(cfg.allowedOrigins).toEqual(['https://a.example', 'https://b.example']);
+    expect(Object.isFrozen(cfg.allowedOrigins)).toBe(true);
   });
 });

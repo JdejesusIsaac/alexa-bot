@@ -45,8 +45,7 @@ export function deriveHolds(
     if (fieldValue === null) continue;
 
     const isBooleanField =
-      rule.condition_column === 'missing_id' ||
-      rule.condition_column === 'do_not_call';
+      rule.condition_column === 'missing_id' || rule.condition_column === 'do_not_call';
 
     const matches = isBooleanField
       ? fieldValue.toLowerCase() === rule.condition_value.toLowerCase()

@@ -45,10 +45,10 @@ export async function seed(): Promise<SyncResult[]> {
 
     for (const fixture of FIXTURES) {
       // 1. Insert tenant
-      await client.query(
-        `insert into tenants (id, name) values ($1, $2)`,
-        [fixture.tenantId, fixture.tenantName],
-      );
+      await client.query(`insert into tenants (id, name) values ($1, $2)`, [
+        fixture.tenantId,
+        fixture.tenantName,
+      ]);
 
       // 2. Insert column mappings
       for (const m of fixture.mappings) {
@@ -64,7 +64,13 @@ export async function seed(): Promise<SyncResult[]> {
         await client.query(
           `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type)
            values ($1, $2, $3, $4, $5)`,
-          [fixture.tenantId, rule.ruleName, rule.conditionColumn, rule.conditionValue, rule.derivedHoldType],
+          [
+            fixture.tenantId,
+            rule.ruleName,
+            rule.conditionColumn,
+            rule.conditionValue,
+            rule.derivedHoldType,
+          ],
         );
       }
 
@@ -77,21 +83,25 @@ export async function seed(): Promise<SyncResult[]> {
       const syncId = syncRes.rows[0]!.id;
 
       // 5. Map raw rows → canonical rows, apply derivation, insert valid ones, quarantine failures
-      const mappings: ColumnMapping[] = fixture.mappings.map((m: MappingSeed, i: number) => ({
-        id: `seed-${fixture.tenantId}-${i}`,
-        tenant_id: fixture.tenantId,
-        sheet_header: m.sheetHeader,
-        canonical_field: m.canonicalField,
-      }));
+      const mappings: ColumnMapping[] = fixture.mappings.map(
+        (m: MappingSeed, i: number) => ({
+          id: `seed-${fixture.tenantId}-${i}`,
+          tenant_id: fixture.tenantId,
+          sheet_header: m.sheetHeader,
+          canonical_field: m.canonicalField,
+        }),
+      );
 
-      const derivationRules: DerivationRule[] = fixture.derivationRules.map((r, i: number) => ({
-        id: `seed-${fixture.tenantId}-rule-${i}`,
-        tenant_id: fixture.tenantId,
-        rule_name: r.ruleName,
-        condition_column: r.conditionColumn,
-        condition_value: r.conditionValue,
-        derived_hold_type: r.derivedHoldType,
-      }));
+      const derivationRules: DerivationRule[] = fixture.derivationRules.map(
+        (r, i: number) => ({
+          id: `seed-${fixture.tenantId}-rule-${i}`,
+          tenant_id: fixture.tenantId,
+          rule_name: r.ruleName,
+          condition_column: r.conditionColumn,
+          condition_value: r.conditionValue,
+          derived_hold_type: r.derivedHoldType,
+        }),
+      );
 
       let rowsValid = 0;
       let rowsQuarantined = 0;

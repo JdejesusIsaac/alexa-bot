@@ -35,11 +35,7 @@ const VALID_ATTENDANCE_STATUSES = new Set([
  * these canonical values. An unknown code means the sheet has a value the
  * system doesn't recognize — it should be quarantined for staff review.
  */
-const VALID_REASON_CODES = new Set([
-  'Excused',
-  'Unexcused',
-  'Excused W/O Notes',
-]);
+const VALID_REASON_CODES = new Set(['Excused', 'Unexcused', 'Excused W/O Notes']);
 
 /**
  * Release time format: H:MM or HH:MM (24-hour). Allows single-digit hour
@@ -49,9 +45,7 @@ const VALID_REASON_CODES = new Set([
  */
 const TIME_FORMAT = /^(\d{1,2}):(\d{2})$/;
 
-export type ValidationResult =
-  | { valid: true }
-  | { valid: false; reason: string };
+export type ValidationResult = { valid: true } | { valid: false; reason: string };
 
 /**
  * Validate a canonical row beyond the Zod schema.
@@ -85,7 +79,10 @@ export function validateRow(row: CanonicalRow): ValidationResult {
   }
 
   // 2. Attendance status
-  if (row.attendance_status !== null && !VALID_ATTENDANCE_STATUSES.has(row.attendance_status)) {
+  if (
+    row.attendance_status !== null &&
+    !VALID_ATTENDANCE_STATUSES.has(row.attendance_status)
+  ) {
     return {
       valid: false,
       reason: `unknown attendance_status: "${row.attendance_status}"`,

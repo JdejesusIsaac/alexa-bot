@@ -13,6 +13,7 @@ fixtures/real/
 .windsurf/state/
 
 # --- Build / tooling ---
+*.code-workspace
 node_modules/
 dist/
 coverage/

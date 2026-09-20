@@ -28,9 +28,7 @@ function captureStream(): { stream: NodeJS.WritableStream; lines: string[] } {
 }
 
 function parseLines(lines: string[]): Record<string, unknown>[] {
-  return lines
-    .filter((l) => l.trim().length > 0)
-    .map((l) => JSON.parse(l.trim()));
+  return lines.filter((l) => l.trim().length > 0).map((l) => JSON.parse(l.trim()));
 }
 
 const STUDENT_NAMES = [
@@ -45,8 +43,17 @@ const STUDENT_NAMES = [
 ];
 
 const STUDENT_REFS = [
-  'A001', 'A002', 'A003', 'A004', 'A007', 'A008',
-  'B001', 'B002', 'B003', 'B004', 'B007',
+  'A001',
+  'A002',
+  'A003',
+  'A004',
+  'A007',
+  'A008',
+  'B001',
+  'B002',
+  'B003',
+  'B004',
+  'B007',
 ];
 
 // ── T-09: No student PII in logs ───────────────────────────────────
@@ -150,10 +157,26 @@ describe('T-09 · Redacts PII keys; string-scan covers fixture data only', () =>
     const { stream, lines } = captureStream();
     const logger = createLogger(makeConfig(), stream);
 
-    logger.info({ msg: 'lookup', tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', request_id: 'r1' });
-    logger.warn({ msg: 'stale', tenant_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', request_id: 'r2' });
-    logger.error({ msg: 'fail', tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', request_id: 'r3' });
-    logger.debug({ msg: 'trace', tenant_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', request_id: 'r4' });
+    logger.info({
+      msg: 'lookup',
+      tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      request_id: 'r1',
+    });
+    logger.warn({
+      msg: 'stale',
+      tenant_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      request_id: 'r2',
+    });
+    logger.error({
+      msg: 'fail',
+      tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      request_id: 'r3',
+    });
+    logger.debug({
+      msg: 'trace',
+      tenant_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      request_id: 'r4',
+    });
 
     const parsed = parseLines(lines);
     expect(parsed).toHaveLength(4);

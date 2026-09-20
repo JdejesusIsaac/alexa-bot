@@ -67,15 +67,34 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
     // Row 6: blank student_name (Zod catches)
     // Row 7: unknown reason_code
     const headers = [
-      'ID', 'Scholar Name', 'Homeroom', 'Attendance', 'Reason',
-      'Hold Type', 'Time In', 'Hold Location', 'DO NOT CALL', 'Missing ID',
+      'ID',
+      'Scholar Name',
+      'Homeroom',
+      'Attendance',
+      'Reason',
+      'Hold Type',
+      'Time In',
+      'Hold Location',
+      'DO NOT CALL',
+      'Missing ID',
     ];
 
     const rows = [
       // Row 1 — clean
       ['T001', 'Alice Test', '101', 'Present', '', '', '', '', 'FALSE', 'FALSE'],
       // Row 2 — clean with hold
-      ['T002', 'Bob Test', '102', 'Absent', 'Excused W/O Notes', 'Detention', '14:30', 'Room 5', 'FALSE', 'FALSE'],
+      [
+        'T002',
+        'Bob Test',
+        '102',
+        'Absent',
+        'Excused W/O Notes',
+        'Detention',
+        '14:30',
+        'Room 5',
+        'FALSE',
+        'FALSE',
+      ],
       // Row 3 — clean, Tardy (will derive detention)
       ['T003', 'Carol Test', '101', 'Tardy', 'Unexcused', '', '', '', 'FALSE', 'FALSE'],
       // Row 4 — clean, do_not_call
@@ -85,7 +104,18 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
       // Row 6 — dirty: blank student_name (Zod min(1) catches)
       ['T006', '', '102', 'Present', '', '', '', '', 'FALSE', 'FALSE'],
       // Row 7 — dirty: unknown reason_code
-      ['T007', 'Frank Test', '103', 'Absent', 'Alien Abduction', '', '', '', 'FALSE', 'FALSE'],
+      [
+        'T007',
+        'Frank Test',
+        '103',
+        'Absent',
+        'Alien Abduction',
+        '',
+        '',
+        '',
+        'FALSE',
+        'FALSE',
+      ],
       // Row 8 — clean
       ['T008', 'Grace Test', '101', 'Present', '', '', '', '', 'FALSE', 'TRUE'],
     ];
@@ -93,7 +123,10 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
     // Set up tenant and mappings in the DB
     const owner = await db.ownerPool.connect();
     try {
-      await owner.query(`insert into tenants (id, name) values ($1, $2) on conflict do nothing`, [TENANT_A, 'Test Campus']);
+      await owner.query(
+        `insert into tenants (id, name) values ($1, $2) on conflict do nothing`,
+        [TENANT_A, 'Test Campus'],
+      );
     } finally {
       owner.release();
     }
@@ -112,7 +145,13 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
       for (const r of derivationRules) {
         await client.query(
           `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5) on conflict do nothing`,
-          [TENANT_A, r.rule_name, r.condition_column, r.condition_value, r.derived_hold_type],
+          [
+            TENANT_A,
+            r.rule_name,
+            r.condition_column,
+            r.condition_value,
+            r.derived_hold_type,
+          ],
         );
       }
     });
@@ -225,8 +264,16 @@ describe('PL-006 · T-07: quarantined rows unreachable from lookup', () => {
 describe('PL-006 · edge cases', () => {
   it('a sheet with all valid rows produces outcome = success', async () => {
     const headers = [
-      'ID', 'Scholar Name', 'Homeroom', 'Attendance', 'Reason',
-      'Hold Type', 'Time In', 'Hold Location', 'DO NOT CALL', 'Missing ID',
+      'ID',
+      'Scholar Name',
+      'Homeroom',
+      'Attendance',
+      'Reason',
+      'Hold Type',
+      'Time In',
+      'Hold Location',
+      'DO NOT CALL',
+      'Missing ID',
     ];
 
     const rows = [
@@ -248,8 +295,16 @@ describe('PL-006 · edge cases', () => {
 
   it('an empty sheet produces zero counts and outcome = success', async () => {
     const headers = [
-      'ID', 'Scholar Name', 'Homeroom', 'Attendance', 'Reason',
-      'Hold Type', 'Time In', 'Hold Location', 'DO NOT CALL', 'Missing ID',
+      'ID',
+      'Scholar Name',
+      'Homeroom',
+      'Attendance',
+      'Reason',
+      'Hold Type',
+      'Time In',
+      'Hold Location',
+      'DO NOT CALL',
+      'Missing ID',
     ];
 
     const mappings = makeMappings();

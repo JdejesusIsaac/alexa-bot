@@ -37,8 +37,8 @@ afterAll(async () => {
 describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
   it('seeds without error', async () => {
     // Point seed() at the test database by overriding DATABASE_URL
-  process.env.DATABASE_URL = db.ownerUrl;
-  process.env.APP_DATABASE_URL = db.appUrl;
+    process.env.DATABASE_URL = db.ownerUrl;
+    process.env.APP_DATABASE_URL = db.appUrl;
     const results = await seed();
     expect(results).toHaveLength(2);
     expect(results[0]!.tenantName).toBe(TENANT_A_NAME);
@@ -59,12 +59,16 @@ describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
 
   it('seeds column mappings per tenant with different headers', async () => {
     const aMappings = await withTenant(db.appPool, TENANT_A, async (client) => {
-      const res = await client.query('select sheet_header, canonical_field from column_mappings order by sheet_header');
+      const res = await client.query(
+        'select sheet_header, canonical_field from column_mappings order by sheet_header',
+      );
       return res.rows;
     });
 
     const bMappings = await withTenant(db.appPool, TENANT_B, async (client) => {
-      const res = await client.query('select sheet_header, canonical_field from column_mappings order by sheet_header');
+      const res = await client.query(
+        'select sheet_header, canonical_field from column_mappings order by sheet_header',
+      );
       return res.rows;
     });
 
@@ -73,14 +77,22 @@ describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
     expect(bMappings).toHaveLength(10);
 
     // Headers differ between tenants (T-08)
-    const aHeaders = new Set(aMappings.map((r: { sheet_header: string }) => r.sheet_header));
-    const bHeaders = new Set(bMappings.map((r: { sheet_header: string }) => r.sheet_header));
+    const aHeaders = new Set(
+      aMappings.map((r: { sheet_header: string }) => r.sheet_header),
+    );
+    const bHeaders = new Set(
+      bMappings.map((r: { sheet_header: string }) => r.sheet_header),
+    );
     const shared = [...aHeaders].filter((h) => bHeaders.has(h));
     expect(shared).toHaveLength(0);
 
     // Same canonical fields mapped
-    const aFields = new Set(aMappings.map((r: { canonical_field: string }) => r.canonical_field));
-    const bFields = new Set(bMappings.map((r: { canonical_field: string }) => r.canonical_field));
+    const aFields = new Set(
+      aMappings.map((r: { canonical_field: string }) => r.canonical_field),
+    );
+    const bFields = new Set(
+      bMappings.map((r: { canonical_field: string }) => r.canonical_field),
+    );
     expect(aFields).toEqual(bFields);
   });
 
@@ -132,12 +144,16 @@ describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
 
   it('quarantines dirty rows with missing required fields', async () => {
     const aQuarantined = await withTenant(db.appPool, TENANT_A, async (client) => {
-      const res = await client.query('select source_row_number, reason from quarantined_rows order by source_row_number');
+      const res = await client.query(
+        'select source_row_number, reason from quarantined_rows order by source_row_number',
+      );
       return res.rows;
     });
 
     const bQuarantined = await withTenant(db.appPool, TENANT_B, async (client) => {
-      const res = await client.query('select source_row_number, reason from quarantined_rows order by source_row_number');
+      const res = await client.query(
+        'select source_row_number, reason from quarantined_rows order by source_row_number',
+      );
       return res.rows;
     });
 
@@ -307,12 +323,16 @@ describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
 
   it('seeds derivation rules per tenant', async () => {
     const aRules = await withTenant(db.appPool, TENANT_A, async (client) => {
-      const res = await client.query('select rule_name, condition_column, condition_value, derived_hold_type from derivation_rules order by rule_name');
+      const res = await client.query(
+        'select rule_name, condition_column, condition_value, derived_hold_type from derivation_rules order by rule_name',
+      );
       return res.rows;
     });
 
     const bRules = await withTenant(db.appPool, TENANT_B, async (client) => {
-      const res = await client.query('select rule_name, condition_column, condition_value, derived_hold_type from derivation_rules order by rule_name');
+      const res = await client.query(
+        'select rule_name, condition_column, condition_value, derived_hold_type from derivation_rules order by rule_name',
+      );
       return res.rows;
     });
 

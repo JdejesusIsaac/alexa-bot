@@ -28,9 +28,7 @@ export async function withTenant<T>(
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query(`select set_config('app.tenant_id', $1, false)`, [
-      tenantId,
-    ]);
+    await client.query(`select set_config('app.tenant_id', $1, false)`, [tenantId]);
     const result = await fn(client);
     // Reset before releasing. If this throws, the finally still releases
     // the client — but the setting persists in the connection. We reset

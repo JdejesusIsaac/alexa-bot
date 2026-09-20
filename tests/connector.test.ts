@@ -54,9 +54,9 @@ describe('FixtureSheetConnector', () => {
 
   it('throws ConnectorAuthError when simulating auth failure', async () => {
     const connector = new FixtureSheetConnector({ simulateAuthFailure: true });
-    await expect(
-      connector.fetchSheet(TENANT_A, 'Sheet1!A1:Z1000'),
-    ).rejects.toThrow(ConnectorAuthError);
+    await expect(connector.fetchSheet(TENANT_A, 'Sheet1!A1:Z1000')).rejects.toThrow(
+      ConnectorAuthError,
+    );
   });
 
   it('returns raw rows including the advisor-notes column', async () => {
@@ -88,9 +88,7 @@ describe('FixtureSheetConnector', () => {
 
 describe('GoogleSheetsConnector', () => {
   it('throws ConnectorAuthError when service account JSON is invalid', () => {
-    expect(() => new GoogleSheetsConnector('not valid json')).toThrow(
-      ConnectorAuthError,
-    );
+    expect(() => new GoogleSheetsConnector('not valid json')).toThrow(ConnectorAuthError);
   });
 
   it('throws ConnectorAuthError when service account JSON is empty', () => {

@@ -5,7 +5,11 @@ import { withTenant } from '../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../src/connector/fixture-sheet-connector.js';
 import { countEntries } from '../src/repositories/roster-entries.js';
-import { isRosterFresh, findLatestSuccessfulSync, findLatestSync } from '../src/repositories/roster-syncs.js';
+import {
+  isRosterFresh,
+  findLatestSuccessfulSync,
+  findLatestSync,
+} from '../src/repositories/roster-syncs.js';
 import {
   TENANT_A,
   TENANT_B,

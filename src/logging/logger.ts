@@ -50,8 +50,22 @@ const PII_KEYS = new Set([
 // the redactor catches any value under a PII key — this list is a
 // defense-in-depth for values that might appear in string interpolation.
 const KNOWN_STUDENT_REFS = [
-  'A001', 'A002', 'A003', 'A004', 'A005', 'A006', 'A007', 'A008',
-  'B001', 'B002', 'B003', 'B004', 'B005', 'B006', 'B007', 'B008',
+  'A001',
+  'A002',
+  'A003',
+  'A004',
+  'A005',
+  'A006',
+  'A007',
+  'A008',
+  'B001',
+  'B002',
+  'B003',
+  'B004',
+  'B005',
+  'B006',
+  'B007',
+  'B008',
 ];
 
 const KNOWN_STUDENT_NAMES = [
