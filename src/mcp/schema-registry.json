@@ -1,0 +1,67 @@
+{
+  "version": "2.0.0",
+  "fingerprint": "d5351866a3f2676ac6a58a7c6442fbc7c2587a08d5097888c645badf56a65a7f",
+  "tools": [
+    {
+      "name": "lookup_scholar_status",
+      "description": "Look up the current dismissal status of one specific scholar by student ID or by full name — their homeroom section, whether they are being held after dismissal, the hold type, the release time, and the location to collect them. Use this tool when someone asks about one scholar. Do not use it to list or compare multiple scholars. Returns the scholar’s status, or a clear explanation of why the status cannot be answered right now.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "student_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "student_name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "search_roster",
+      "description": "List the scholars on today’s dismissal roster, optionally narrowed by homeroom section, hold type, or attendance status. Use this tool when someone asks for a group — a whole roster, a section, or everyone with a given hold. Do not use it to look up one specific scholar. Returns a page of scholars with the total match count; the result can be paged.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hold_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attendance_status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "roster_sync_status",
+      "description": "Check the health of the roster data feed: when the roster was last refreshed, whether it is current, and how many rows were quarantined with the reasons. Requires an administrative role. Use this tool to diagnose why dismissal-status answers might be stale or incomplete.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}
