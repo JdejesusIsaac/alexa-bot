@@ -5,6 +5,7 @@ import { type ColumnMapping } from '../repositories/column-mappings.js';
 import { type DerivationRule } from '../repositories/derivation-rules.js';
 import { deriveHolds } from '../derivation/derive-holds.js';
 import { type MappingSeed, FIXTURES } from '../fixtures/synthetic-data.js';
+import { todayServiceDate } from '../util/service-date.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -17,8 +18,17 @@ import path from 'node:path';
  *
  * Idempotent: truncates all seeded tables before inserting.
  *
+ * Seeds the roster as a dated set — today's service date by default, or
+ * an explicit date for deterministic test setups — and populates the
+ * `students` registry the same way ingest does (PL-201, T-51).
+ *
  * No student PII is logged. Only counts and tenant names appear in output.
  */
+
+export interface SeedOptions {
+  /** Service date for the seeded roster set. Defaults to today. */
+  readonly serviceDate?: string;
+}
 
 interface SyncResult {
   tenantName: string;
@@ -27,7 +37,8 @@ interface SyncResult {
   rowsQuarantined: number;
 }
 
-export async function seed(): Promise<SyncResult[]> {
+export async function seed(options?: SeedOptions): Promise<SyncResult[]> {
+  const serviceDate = options?.serviceDate ?? todayServiceDate();
   const config = loadConfig();
   const client = new Client({ connectionString: config.databaseUrl });
   await client.connect();
@@ -74,11 +85,11 @@ export async function seed(): Promise<SyncResult[]> {
         );
       }
 
-      // 4. Create a roster sync record
+      // 4. Create a roster sync record for the service date
       const syncRes = await client.query<{ id: string }>(
-        `insert into roster_syncs (tenant_id, started_at, finished_at, rows_in, rows_valid, rows_quarantined, outcome)
-         values ($1, now(), now(), 0, 0, 0, 'success') returning id`,
-        [fixture.tenantId],
+        `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, rows_quarantined, outcome)
+         values ($1, $2, now(), now(), 0, 0, 0, 'success') returning id`,
+        [fixture.tenantId, serviceDate],
       );
       const syncId = syncRes.rows[0]!.id;
 
@@ -115,14 +126,34 @@ export async function seed(): Promise<SyncResult[]> {
           const mapped = mapRow(headers, values, mappings, rowNumber);
           const canonical = deriveHolds(mapped, derivationRules);
 
-          await client.query(
-            `insert into roster_entries
-               (tenant_id, student_ref, student_name, section, attendance_status,
-                reason_code, hold_type, hold_source, release_time, hold_location,
-                do_not_call, missing_id, source_row_number, sync_id)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          // Resolve the student registry — insert when absent, link the
+          // roster row (PL-201, T-51). Same shape as the ingest pipeline;
+          // raw SQL here because seeding runs as the owner role.
+          const studentRes = await client.query<{ id: string }>(
+            `insert into students (tenant_id, student_ref, student_name, section)
+             values ($1, $2, $3, $4)
+             on conflict (tenant_id, student_ref) do update
+               set student_name = excluded.student_name,
+                   section = excluded.section
+             returning id`,
             [
               fixture.tenantId,
+              canonical.student_ref,
+              canonical.student_name,
+              canonical.section,
+            ],
+          );
+
+          await client.query(
+            `insert into roster_entries
+               (tenant_id, service_date, student_id, student_ref, student_name, section, attendance_status,
+                reason_code, hold_type, hold_source, release_time, hold_location,
+                do_not_call, missing_id, source_row_number, sync_id)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+            [
+              fixture.tenantId,
+              serviceDate,
+              studentRes.rows[0]!.id,
               canonical.student_ref,
               canonical.student_name,
               canonical.section,

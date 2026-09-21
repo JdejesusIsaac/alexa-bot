@@ -22,6 +22,7 @@ import {
 } from '../../services/scholar-status.js';
 import { findByStudentName } from '../../repositories/roster-entries.js';
 import { project } from '../../disclosure/policy.js';
+import { todayServiceDate } from '../../util/service-date.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 
 export const LOOKUP_SCHOLAR_STATUS_NAME = 'lookup_scholar_status';
@@ -82,11 +83,16 @@ export async function handleLookupScholarStatus(
   const args = parsed.data;
 
   const result = await withTenant(deps.appPool, identity.tenantId, async (client) => {
+    // The service date is derived once per request — today's roster.
+    // Resolving the name and reading the status with the same date
+    // keeps one request on one day's set (PL-201).
+    const serviceDate = todayServiceDate();
+
     // Resolve name → ref inside the tenant context; a name that exists
     // only in another tenant is simply not found here (T-35).
     let studentRef = args.student_ref;
     if (studentRef === undefined) {
-      const entry = await findByStudentName(client, args.student_name!);
+      const entry = await findByStudentName(client, args.student_name!, serviceDate);
       if (entry === null) {
         const refusal: ScholarStatusResult = {
           kind: 'refusal',
@@ -108,6 +114,7 @@ export async function handleLookupScholarStatus(
       caller: 'staff',
       actor: identity.sub,
       freshnessMinutes: deps.rosterFreshnessMinutes,
+      serviceDate,
     });
 
     // T-40 — every call audited, success included; the boundary writes
@@ -118,8 +125,7 @@ export async function handleLookupScholarStatus(
       argumentsRedacted: {
         lookup_by: args.student_ref !== undefined ? 'student_ref' : 'student_name',
       },
-      outcome:
-        status.kind === 'refusal' ? `refusal:${status.reason}` : 'success',
+      outcome: status.kind === 'refusal' ? `refusal:${status.reason}` : 'success',
       toolMs: Math.round(performance.now() - toolStart),
     };
     return status;

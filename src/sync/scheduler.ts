@@ -15,8 +15,9 @@
  *    fails, existing data is preserved (T-13).
  *  - Staleness counts from the last *successful* sync, not a failed one
  *    (T-13). `findLatestSuccessfulSync` filters out failures.
- *  - Sync is idempotent: old entries are deleted before re-ingesting,
- *    so twice on an unchanged sheet produces no duplicates (T-11).
+ *  - Sync is idempotent: the current service date's entries are deleted
+ *    before re-ingesting, so twice on an unchanged sheet produces no
+ *    duplicates (T-11) — and prior dates are never touched (T-50).
  */
 
 import { type Pool } from 'pg';
@@ -34,8 +35,9 @@ import {
   finalizeSync,
   type RosterSync,
 } from '../repositories/roster-syncs.js';
-import { deleteAllEntries } from '../repositories/roster-entries.js';
-import { deleteAllQuarantinedRows } from '../repositories/quarantined-rows.js';
+import { deleteEntriesForDate } from '../repositories/roster-entries.js';
+import { deleteQuarantinedRowsForDate } from '../repositories/quarantined-rows.js';
+import { todayServiceDate } from '../util/service-date.js';
 
 /**
  * One sync job per tenant. The `tenantId` comes from configuration —
@@ -45,6 +47,16 @@ export interface SyncJob {
   readonly tenantId: string;
   readonly sheetId: string;
   readonly range: string;
+}
+
+/**
+ * Options for a sync run. `serviceDate` is the school day the roster is
+ * for — the scheduler ticks today on every run, so the date is derived
+ * at run time rather than pinned on the job (a date on the job config
+ * would go stale at local midnight). Tests pass fixed dates (PL-201).
+ */
+export interface RunSyncOptions {
+  readonly serviceDate?: string;
 }
 
 /**
@@ -62,14 +74,18 @@ export type SyncResult =
  * 3. Try to fetch the sheet via the connector.
  * 4. On connector failure: create + finalize a failed sync record.
  *    Do NOT delete existing entries — previous roster stays intact (T-13).
- * 5. On connector success: clear old entries + quarantined rows, then
- *    run `ingestSheet` to re-ingest (T-11 idempotency).
+ * 5. On connector success: clear the service date's entries + quarantined
+ *    rows, then run `ingestSheet` for that date to re-ingest (T-11
+ *    idempotency within the day; T-50 other days are untouched).
  */
 export async function runSync(
   pool: Pool,
   connector: SheetConnector,
   job: SyncJob,
+  options?: RunSyncOptions,
 ): Promise<SyncResult> {
+  const serviceDate = options?.serviceDate ?? todayServiceDate();
+
   return withTenant(pool, job.tenantId, async (client) => {
     // Fetch config (mappings + rules) within tenant context
     const mappings = await findMappings(client);
@@ -81,7 +97,7 @@ export async function runSync(
       sheetData = await connector.fetchSheet(job.sheetId, job.range);
     } catch (err) {
       // Connector failure — record a failed sync, preserve existing data.
-      const sync = await createSync(client);
+      const sync = await createSync(client, serviceDate);
       const failedSync = await finalizeSync(client, {
         syncId: sync.id,
         rowsIn: 0,
@@ -97,11 +113,14 @@ export async function runSync(
       };
     }
 
-    // Connector succeeded — clear old data and re-ingest (idempotent).
-    await deleteAllEntries(client);
-    await deleteAllQuarantinedRows(client);
+    // Connector succeeded — clear the service date's set and re-ingest
+    // (idempotent within the date; other dates are untouched).
+    await deleteEntriesForDate(client, serviceDate);
+    await deleteQuarantinedRowsForDate(client, serviceDate);
 
-    const ingest = await ingestSheet(client, sheetData, mappings, rules);
+    const ingest = await ingestSheet(client, sheetData, mappings, rules, {
+      serviceDate,
+    });
 
     return {
       kind: 'success',

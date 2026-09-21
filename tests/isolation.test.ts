@@ -45,15 +45,15 @@ beforeAll(async () => {
       [TENANT_A, TENANT_B],
     );
 
-    // Sync records (required FK for roster_entries)
+    // Sync records (required FK for roster_entries) — a fixed service date
     const syncA = await owner.query(
-      `insert into roster_syncs (tenant_id, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, now(), now(), 3, 3, 'success') returning id`,
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, '2030-03-15', now(), now(), 3, 3, 'success') returning id`,
       [TENANT_A],
     );
     const syncB = await owner.query(
-      `insert into roster_syncs (tenant_id, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, now(), now(), 3, 3, 'success') returning id`,
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, '2030-03-15', now(), now(), 3, 3, 'success') returning id`,
       [TENANT_B],
     );
 
@@ -64,21 +64,21 @@ beforeAll(async () => {
     // with different statuses, so a cross-tenant leak is visible.
     await owner.query(
       `insert into roster_entries
-         (tenant_id, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
+         (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
        values
-         ($1, 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $2),
-         ($1, 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $2),
-         ($1, 'A003', 'James Park',   '102', 'Absent',  'authoritative', 3, $2)`,
+         ($1, '2030-03-15', 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $2),
+         ($1, '2030-03-15', 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $2),
+         ($1, '2030-03-15', 'A003', 'James Park',   '102', 'Absent',  'authoritative', 3, $2)`,
       [TENANT_A, syncAId],
     );
 
     await owner.query(
       `insert into roster_entries
-         (tenant_id, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
+         (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
        values
-         ($1, 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $2),
-         ($1, 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $2),
-         ($1, 'B003', 'Kevin Wright',  '202', 'Present', 'authoritative', 3, $2)`,
+         ($1, '2030-03-15', 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $2),
+         ($1, '2030-03-15', 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $2),
+         ($1, '2030-03-15', 'B003', 'Kevin Wright',  '202', 'Present', 'authoritative', 3, $2)`,
       [TENANT_B, syncBId],
     );
   } finally {

@@ -31,6 +31,7 @@ import { withTenant } from '../db/tenant-context.js';
 import { getScholarStatus } from '../services/scholar-status.js';
 import { findByStudentRef as findAuditByStudentRef } from '../repositories/audit-log.js';
 import { searchRosterEntries } from '../repositories/roster-entries.js';
+import { todayServiceDate } from '../util/service-date.js';
 import {
   TENANT_A,
   TENANT_B,
@@ -72,7 +73,12 @@ async function runTenant(
   freshnessMinutes: number,
 ): Promise<TenantRunResult> {
   return withTenant(pool, tenant.id, async (client) => {
-    const page = await searchRosterEntries(client, {}, { limit: 100, offset: 0 });
+    const page = await searchRosterEntries(
+      client,
+      {},
+      { limit: 100, offset: 0 },
+      todayServiceDate(),
+    );
 
     const latenciesMs: number[] = [];
     let successes = 0;

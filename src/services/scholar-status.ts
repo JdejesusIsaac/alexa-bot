@@ -26,6 +26,7 @@ import { findByTenant as findMappings } from '../repositories/column-mappings.js
 import { existsByStudentRef } from '../repositories/quarantined-rows.js';
 import { insertAuditEntry } from '../repositories/audit-log.js';
 import { toParentFacing } from '../derivation/parent-facing.js';
+import { todayServiceDate } from '../util/service-date.js';
 
 export type CallerType = 'staff' | 'parent';
 
@@ -57,6 +58,13 @@ export interface ScholarStatusRequest {
   readonly actor: string;
   /** Freshness threshold in minutes (from config). */
   readonly freshnessMinutes: number;
+  /**
+   * The service date to read — the school day the roster is for.
+   * Derived server-side (never caller- or model-supplied); defaults to
+   * today. Callers that resolve a name to a ref first pass the date they
+   * resolved with, so one request cannot straddle a date boundary (PL-201).
+   */
+  readonly serviceDate?: string;
 }
 
 const STAFF_FIELDS = [
@@ -92,6 +100,7 @@ export async function getScholarStatus(
   request: ScholarStatusRequest,
 ): Promise<ScholarStatusResult> {
   const { studentRef, caller, actor, freshnessMinutes } = request;
+  const serviceDate = request.serviceDate ?? todayServiceDate();
 
   // 1. Freshness check — is the roster current enough to answer?
   const fresh = await isRosterFresh(client, freshnessMinutes);
@@ -114,8 +123,9 @@ export async function getScholarStatus(
     return { kind: 'refusal', reason };
   }
 
-  // 2. Look up the student in roster_entries.
-  const entry = await findByStudentRef(client, studentRef);
+  // 2. Look up the student in roster_entries — scoped to the service
+  //    date, so prior days' rows are unreachable from a default read.
+  const entry = await findByStudentRef(client, studentRef, serviceDate);
   if (!entry) {
     // 3. Not in roster_entries — check if the row was quarantined.
     //    We need the tenant's sheet header for student_ref to search
@@ -127,7 +137,12 @@ export async function getScholarStatus(
 
     let quarantined = false;
     if (studentRefHeader) {
-      quarantined = await existsByStudentRef(client, studentRef, studentRefHeader);
+      quarantined = await existsByStudentRef(
+        client,
+        studentRef,
+        studentRefHeader,
+        serviceDate,
+      );
     }
 
     const reason = quarantined ? 'row_quarantined' : 'student_not_found';

@@ -44,6 +44,7 @@ export const FIELD_CLEARANCE: Readonly<Record<string, Clearance>> = {
   tenant_id: 'never',
   id: 'never',
   student_id: 'never',
+  service_date: 'never',
 };
 
 /**

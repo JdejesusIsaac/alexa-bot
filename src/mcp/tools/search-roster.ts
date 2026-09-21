@@ -24,6 +24,7 @@ import {
 } from '../../repositories/roster-entries.js';
 import { isRosterFresh, findLatestSync } from '../../repositories/roster-syncs.js';
 import { project } from '../../disclosure/policy.js';
+import { todayServiceDate } from '../../util/service-date.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 import type { LookupResult } from './lookup-scholar-status.js';
 
@@ -100,6 +101,10 @@ export async function handleSearchRoster(
         : { kind: 'refusal' as const, reason: 'roster_stale' };
     }
 
+    // Today's roster — the service date is derived per request, never
+    // a caller-supplied argument (PL-201).
+    const serviceDate = todayServiceDate();
+
     const filters: { section?: string; holdType?: string; attendanceStatus?: string } =
       {};
     if (args.section !== undefined) filters.section = args.section;
@@ -108,10 +113,15 @@ export async function handleSearchRoster(
       filters.attendanceStatus = args.attendance_status;
     }
 
-    const page = await searchRosterEntries(client, filters, {
-      limit: Math.min(args.limit, MAX_PAGE_SIZE),
-      offset: args.offset,
-    });
+    const page = await searchRosterEntries(
+      client,
+      filters,
+      {
+        limit: Math.min(args.limit, MAX_PAGE_SIZE),
+        offset: args.offset,
+      },
+      serviceDate,
+    );
 
     const projected = page.entries.map((entry) =>
       project(

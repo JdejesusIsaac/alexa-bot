@@ -1,4 +1,5 @@
 import { type PoolClient } from 'pg';
+import '../db/pg-types.js';
 
 /**
  * Roster syncs repository (PL-006/PL-007).
@@ -16,6 +17,7 @@ import { type PoolClient } from 'pg';
 export interface RosterSync {
   id: string;
   tenant_id: string;
+  service_date: string;
   started_at: Date;
   finished_at: Date | null;
   rows_in: number;
@@ -25,14 +27,21 @@ export interface RosterSync {
 }
 
 /**
- * Create a new sync record at the start of a sync run.
- * The tenant_id is set by RLS from `app.tenant_id`.
+ * Create a new sync record at the start of a sync run, for a service
+ * date — the school day the ingested roster belongs to (PL-201). A
+ * sync is a dated set; the date is part of the record, not inferred
+ * from the clock later. The tenant_id is set by RLS from
+ * `app.tenant_id`.
  */
-export async function createSync(client: PoolClient): Promise<RosterSync> {
+export async function createSync(
+  client: PoolClient,
+  serviceDate: string,
+): Promise<RosterSync> {
   const res = await client.query<RosterSync>(
-    `insert into roster_syncs (tenant_id, started_at, rows_in, rows_valid, rows_quarantined, outcome)
-     values (current_setting('app.tenant_id')::uuid, now(), 0, 0, 0, 'success')
+    `insert into roster_syncs (tenant_id, service_date, started_at, rows_in, rows_valid, rows_quarantined, outcome)
+     values (current_setting('app.tenant_id')::uuid, $1, now(), 0, 0, 0, 'success')
      returning *`,
+    [serviceDate],
   );
   return res.rows[0]!;
 }

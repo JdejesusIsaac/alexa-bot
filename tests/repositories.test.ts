@@ -24,6 +24,9 @@ import {
 const TENANT_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TENANT_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
+/** Fixed service date for the seeded rows — deterministic (PL-201). */
+const SEED_DATE = '2030-03-15';
+
 let db: TestDb;
 
 beforeAll(async () => {
@@ -37,14 +40,14 @@ beforeAll(async () => {
     );
 
     const syncA = await owner.query(
-      `insert into roster_syncs (tenant_id, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, now(), now(), 2, 2, 'success') returning id`,
-      [TENANT_A],
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, $2, now(), now(), 2, 2, 'success') returning id`,
+      [TENANT_A, SEED_DATE],
     );
     const syncB = await owner.query(
-      `insert into roster_syncs (tenant_id, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, now(), now(), 2, 2, 'success') returning id`,
-      [TENANT_B],
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, $2, now(), now(), 2, 2, 'success') returning id`,
+      [TENANT_B, SEED_DATE],
     );
 
     const syncAId = syncA.rows[0]!.id;
@@ -52,20 +55,20 @@ beforeAll(async () => {
 
     await owner.query(
       `insert into roster_entries
-         (tenant_id, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
+         (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
        values
-         ($1, 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $2),
-         ($1, 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $2)`,
-      [TENANT_A, syncAId],
+         ($1, $2, 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $3),
+         ($1, $2, 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $3)`,
+      [TENANT_A, SEED_DATE, syncAId],
     );
 
     await owner.query(
       `insert into roster_entries
-         (tenant_id, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
+         (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
        values
-         ($1, 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $2),
-         ($1, 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $2)`,
-      [TENANT_B, syncBId],
+         ($1, $2, 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $3),
+         ($1, $2, 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $3)`,
+      [TENANT_B, SEED_DATE, syncBId],
     );
   } finally {
     owner.release();
@@ -79,7 +82,7 @@ afterAll(async () => {
 describe('Repository layer · roster-entries', () => {
   it('findByStudentRef returns the correct entry within tenant A', async () => {
     const entry = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return findByStudentRef(client, 'A001');
+      return findByStudentRef(client, 'A001', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.student_name).toBe('Daniel Reyes');
@@ -89,14 +92,14 @@ describe('Repository layer · roster-entries', () => {
 
   it('findByStudentRef returns null for a student in the other tenant', async () => {
     const entry = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return findByStudentRef(client, 'B001');
+      return findByStudentRef(client, 'B001', SEED_DATE);
     });
     expect(entry).toBeNull();
   });
 
   it('findByStudentName returns the correct entry within tenant B', async () => {
     const entry = await withTenant(db.appPool, TENANT_B, async (client) => {
-      return findByStudentName(client, 'Daniel Reyes');
+      return findByStudentName(client, 'Daniel Reyes', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.student_ref).toBe('B001');
@@ -105,12 +108,12 @@ describe('Repository layer · roster-entries', () => {
 
   it('findByStudentName does not cross tenants for colliding names', async () => {
     const entryA = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return findByStudentName(client, 'Daniel Reyes');
+      return findByStudentName(client, 'Daniel Reyes', SEED_DATE);
     });
     expect(entryA!.student_ref).toBe('A001');
 
     const entryB = await withTenant(db.appPool, TENANT_B, async (client) => {
-      return findByStudentName(client, 'Daniel Reyes');
+      return findByStudentName(client, 'Daniel Reyes', SEED_DATE);
     });
     expect(entryB!.student_ref).toBe('B001');
   });
@@ -178,7 +181,7 @@ describe('Repository layer · withTenant context management', () => {
   it('withTenant resets tenant context before returning connection to pool', async () => {
     // Run a query under tenant A
     await withTenant(db.appPool, TENANT_A, async (client) => {
-      const entry = await findByStudentRef(client, 'A001');
+      const entry = await findByStudentRef(client, 'A001', SEED_DATE);
       expect(entry).not.toBeNull();
     });
 

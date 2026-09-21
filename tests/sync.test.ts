@@ -31,6 +31,9 @@ import {
  * Synthetic data only.
  */
 
+/** Fixed service date — deterministic, and never today's clock (PL-201). */
+const SYNC_DATE = '2030-03-15';
+
 let db: TestDb;
 
 beforeAll(async () => {
@@ -89,19 +92,19 @@ describe('PL-007 · T-11: sync is idempotent', () => {
     };
 
     // First sync
-    const result1 = await runSync(db.appPool, connector, job);
+    const result1 = await runSync(db.appPool, connector, job, { serviceDate: SYNC_DATE });
     expect(result1.kind).toBe('success');
 
     const count1 = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
 
     // Second sync on the same sheet
-    const result2 = await runSync(db.appPool, connector, job);
+    const result2 = await runSync(db.appPool, connector, job, { serviceDate: SYNC_DATE });
     expect(result2.kind).toBe('success');
 
     const count2 = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
 
     // No duplicates — count should be the same
@@ -179,11 +182,13 @@ describe('PL-007 · T-13: upstream failure preserves prior data', () => {
       range: 'Sheet1!A1:Z1000',
     };
 
-    const result1 = await runSync(db.appPool, goodConnector, job);
+    const result1 = await runSync(db.appPool, goodConnector, job, {
+      serviceDate: SYNC_DATE,
+    });
     expect(result1.kind).toBe('success');
 
     const countBefore = await withTenant(db.appPool, TENANT_B, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
     expect(countBefore).toBeGreaterThan(0);
 
@@ -191,7 +196,9 @@ describe('PL-007 · T-13: upstream failure preserves prior data', () => {
     const failingConnector = new FixtureSheetConnector({
       simulateAuthFailure: true,
     });
-    const result2 = await runSync(db.appPool, failingConnector, job);
+    const result2 = await runSync(db.appPool, failingConnector, job, {
+      serviceDate: SYNC_DATE,
+    });
     expect(result2.kind).toBe('failure');
     if (result2.kind === 'failure') {
       expect(result2.sync.outcome).toBe('failure');
@@ -200,7 +207,7 @@ describe('PL-007 · T-13: upstream failure preserves prior data', () => {
 
     // Existing entries are preserved — count unchanged
     const countAfter = await withTenant(db.appPool, TENANT_B, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
     expect(countAfter).toBe(countBefore);
   });
@@ -236,13 +243,13 @@ describe('PL-007 · T-23: background jobs establish tenant context', () => {
   it('runSync for tenant A writes only tenant A rows', async () => {
     // We already have tenant A entries from T-11. Verify they are all tenant A.
     const aCount = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
     expect(aCount).toBeGreaterThan(0);
 
     // Verify tenant B cannot see tenant A's entries
     const bCount = await withTenant(db.appPool, TENANT_B, async (client) => {
-      return countEntries(client);
+      return countEntries(client, SYNC_DATE);
     });
     // Tenant B has entries from T-13, but they should be separate from A's
     expect(bCount).toBeGreaterThan(0);
@@ -280,7 +287,7 @@ describe('PL-007 · T-23: background jobs establish tenant context', () => {
       range: 'Sheet1!A1:Z1000',
     };
 
-    const result = await runSync(db.appPool, connector, job);
+    const result = await runSync(db.appPool, connector, job, { serviceDate: SYNC_DATE });
     expect(result.kind).toBe('success');
 
     // The sync record should be visible under tenant A

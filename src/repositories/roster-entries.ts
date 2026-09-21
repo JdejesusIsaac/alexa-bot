@@ -1,4 +1,5 @@
 import { type PoolClient } from 'pg';
+import '../db/pg-types.js';
 
 /**
  * Roster entry repository.
@@ -16,6 +17,7 @@ import { type PoolClient } from 'pg';
 export interface RosterEntry {
   id: string;
   tenant_id: string;
+  service_date: string;
   student_id: string | null;
   student_ref: string;
   student_name: string;
@@ -34,41 +36,55 @@ export interface RosterEntry {
 
 /**
  * Find a roster entry by student reference within the current tenant
- * context. RLS ensures only the active tenant's rows are visible.
+ * context, scoped to a service date (PL-201). RLS ensures only the
+ * active tenant's rows are visible; the date scope ensures only that
+ * day's set is reachable — the grain adds rows previous reads never
+ * saw, so an undated read here would be a leak vector (21).
  */
 export async function findByStudentRef(
   client: PoolClient,
   studentRef: string,
+  serviceDate: string,
 ): Promise<RosterEntry | null> {
   const res = await client.query<RosterEntry>(
-    `select * from roster_entries where student_ref = $1 limit 1`,
-    [studentRef],
+    `select * from roster_entries
+     where student_ref = $1 and service_date = $2
+     limit 1`,
+    [studentRef, serviceDate],
   );
   return res.rows.length > 0 ? res.rows[0]! : null;
 }
 
 /**
- * Find a roster entry by student name within the current tenant context.
- * Used when a parent provides a name rather than a ref.
+ * Find a roster entry by student name within the current tenant context,
+ * scoped to a service date (PL-201). Used when a parent provides a name
+ * rather than a ref.
  */
 export async function findByStudentName(
   client: PoolClient,
   studentName: string,
+  serviceDate: string,
 ): Promise<RosterEntry | null> {
   const res = await client.query<RosterEntry>(
-    `select * from roster_entries where student_name = $1 limit 1`,
-    [studentName],
+    `select * from roster_entries
+     where student_name = $1 and service_date = $2
+     limit 1`,
+    [studentName, serviceDate],
   );
   return res.rows.length > 0 ? res.rows[0]! : null;
 }
 
 /**
- * Count roster entries for the current tenant. Used by sync to record
- * how many rows landed.
+ * Count roster entries for the current tenant on a service date.
+ * Used by sync to record how many rows landed on the day's set.
  */
-export async function countEntries(client: PoolClient): Promise<number> {
+export async function countEntries(
+  client: PoolClient,
+  serviceDate: string,
+): Promise<number> {
   const res = await client.query<{ count: string }>(
-    `select count(*)::text as count from roster_entries`,
+    `select count(*)::text as count from roster_entries where service_date = $1`,
+    [serviceDate],
   );
   return parseInt(res.rows[0]!.count, 10);
 }
@@ -100,9 +116,13 @@ export async function searchRosterEntries(
   client: PoolClient,
   filters: RosterSearchFilters,
   pagination: { limit: number; offset: number },
+  serviceDate: string,
 ): Promise<RosterSearchPage> {
   const where: string[] = [];
   const params: unknown[] = [];
+
+  params.push(serviceDate);
+  where.push(`service_date = $${params.length}`);
 
   if (filters.section !== undefined) {
     params.push(filters.section);
@@ -146,12 +166,19 @@ export async function searchRosterEntries(
 }
 
 /**
- * Delete all roster entries for the current tenant. Used by the sync
- * scheduler before re-ingesting to ensure idempotency (T-11). RLS
- * ensures only the active tenant's rows are affected.
+ * Delete the roster entries for one service date within the current
+ * tenant. Used by the sync scheduler before re-ingesting to keep the
+ * day's set idempotent (T-11) — and only the day's set: deleting every
+ * date is exactly the wipe that the service_date grain exists to prevent
+ * (T-50).
  */
-export async function deleteAllEntries(client: PoolClient): Promise<number> {
-  const res = await client.query(`delete from roster_entries`);
+export async function deleteEntriesForDate(
+  client: PoolClient,
+  serviceDate: string,
+): Promise<number> {
+  const res = await client.query(`delete from roster_entries where service_date = $1`, [
+    serviceDate,
+  ]);
   return res.rowCount ?? 0;
 }
 
@@ -163,6 +190,8 @@ export async function deleteAllEntries(client: PoolClient): Promise<number> {
 export async function insertEntry(
   client: PoolClient,
   params: {
+    serviceDate: string;
+    studentId: string;
     studentRef: string;
     studentName: string;
     section: string | null;
@@ -180,12 +209,14 @@ export async function insertEntry(
 ): Promise<RosterEntry> {
   const res = await client.query<RosterEntry>(
     `insert into roster_entries
-       (tenant_id, student_ref, student_name, section, attendance_status,
+       (tenant_id, service_date, student_id, student_ref, student_name, section, attendance_status,
         reason_code, hold_type, hold_source, release_time, hold_location,
         do_not_call, missing_id, source_row_number, sync_id)
-     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      returning *`,
     [
+      params.serviceDate,
+      params.studentId,
       params.studentRef,
       params.studentName,
       params.section,

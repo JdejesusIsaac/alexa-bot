@@ -1,7 +1,7 @@
 /**
  * Ingestion pipeline (PL-006).
  *
- * Ties together: map → validate → derive → insert valid / quarantine invalid.
+ * Ties together: map → validate → derive → resolve student → insert valid / quarantine invalid.
  *
  * The function accepts a `PoolClient` already scoped to a tenant via
  * `withTenant` — it never acquires its own connection (Rule 11) and never
@@ -31,6 +31,8 @@ import {
 } from '../repositories/roster-syncs.js';
 import { insertQuarantinedRow } from '../repositories/quarantined-rows.js';
 import { insertEntry } from '../repositories/roster-entries.js';
+import { upsertStudent } from '../repositories/students.js';
+import { todayServiceDate } from '../util/service-date.js';
 
 export interface IngestResult {
   sync: RosterSync;
@@ -41,13 +43,27 @@ export interface IngestResult {
 }
 
 /**
- * Ingest a sheet: map each row, validate, derive holds, insert valid rows
- * into `roster_entries`, quarantine invalid rows in `quarantined_rows`.
+ * Options for an ingest run. `serviceDate` is the school day the sheet
+ * belongs to — a sync without a date is today's set (PL-201). Tests pass
+ * fixed dates for determinism.
+ */
+export interface IngestOptions {
+  readonly serviceDate?: string;
+}
+
+/**
+ * Ingest a sheet: map each row, validate, derive holds, resolve the
+ * student registry, insert valid rows into `roster_entries` for the
+ * service date, quarantine invalid rows in `quarantined_rows`.
+ *
+ * Every valid row links to `students` — an absent `student_ref` is
+ * inserted, never skipped (T-51).
  *
  * @param client - PoolClient already scoped to a tenant via `withTenant`
  * @param sheetData - Raw sheet data from the connector
  * @param mappings - Per-tenant column mappings
  * @param derivationRules - Per-tenant hold derivation rules
+ * @param options - Optional service date; defaults to today
  * @returns Sync result with counts and outcome
  */
 export async function ingestSheet(
@@ -55,8 +71,10 @@ export async function ingestSheet(
   sheetData: SheetData,
   mappings: readonly ColumnMapping[],
   derivationRules: readonly DerivationRule[],
+  options?: IngestOptions,
 ): Promise<IngestResult> {
-  const sync = await createSync(client);
+  const serviceDate = options?.serviceDate ?? todayServiceDate();
+  const sync = await createSync(client, serviceDate);
 
   const { headers, rows } = sheetData;
   let rowsValid = 0;
@@ -86,8 +104,18 @@ export async function ingestSheet(
       // 3. Derive holds (PL-012)
       const canonical = deriveHolds(mapped, derivationRules);
 
-      // 4. Insert into roster_entries
+      // 4. Resolve the student registry — insert when absent, link the
+      //    roster row to the student (T-51)
+      const student = await upsertStudent(client, {
+        studentRef: canonical.student_ref,
+        studentName: canonical.student_name,
+        section: canonical.section,
+      });
+
+      // 5. Insert into roster_entries for the service date
       await insertEntry(client, {
+        serviceDate,
+        studentId: student.id,
         studentRef: canonical.student_ref,
         studentName: canonical.student_name,
         section: canonical.section,

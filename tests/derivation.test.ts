@@ -29,13 +29,16 @@ import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 const TENANT_A_ID = TENANT_A;
 const TENANT_B_ID = TENANT_B;
 
+/** Fixed service date for the seeded roster set — deterministic (PL-201). */
+const SEED_DATE = '2030-03-15';
+
 let db: TestDb;
 
 beforeAll(async () => {
   db = await provisionTestDb();
   process.env.DATABASE_URL = db.ownerUrl;
   process.env.APP_DATABASE_URL = db.appUrl;
-  await seed();
+  await seed({ serviceDate: SEED_DATE });
 });
 
 afterAll(async () => {
@@ -91,7 +94,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('derives detention from Tardy (no authoritative hold_type)', async () => {
     // A001 is Jordan Smith, Tardy, no hold_type from sheet
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A001');
+      return findByStudentRef(client, 'A001', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.hold_type).toBe('Detention');
@@ -101,7 +104,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('derives detention from missing_id = true', async () => {
     // A007 is Aisha Mohammed, Tardy + missing_id=true, no hold_type from sheet
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A007');
+      return findByStudentRef(client, 'A007', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.hold_type).toBe('Detention');
@@ -111,7 +114,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('preserves authoritative holds from the sheet', async () => {
     // A008 is Devon Walker, hold_type='Detention' from sheet (Hold Type column)
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A008');
+      return findByStudentRef(client, 'A008', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.hold_type).toBe('Detention');
@@ -121,7 +124,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('leaves no hold when no rule matches and no sheet hold', async () => {
     // A002 is Jordan Smith (second one), Present, no hold_type from sheet
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A002');
+      return findByStudentRef(client, 'A002', SEED_DATE);
     });
     expect(entry).not.toBeNull();
     expect(entry!.hold_type).toBeNull();
@@ -131,7 +134,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('blocks derived holds on parent-facing paths', async () => {
     // A001 has a derived hold
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A001');
+      return findByStudentRef(client, 'A001', SEED_DATE);
     });
     expect(entry).not.toBeNull();
 
@@ -145,7 +148,7 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('allows authoritative holds on parent-facing paths', async () => {
     // A008 has an authoritative hold
     const entry = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A008');
+      return findByStudentRef(client, 'A008', SEED_DATE);
     });
     expect(entry).not.toBeNull();
 
@@ -161,10 +164,10 @@ describe('T-21 · Derived holds are marked and never parent-facing', () => {
   it('staff path retrieves both derived and authoritative holds', async () => {
     // Staff path = direct repository access, no parent-facing filter
     const derived = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A001');
+      return findByStudentRef(client, 'A001', SEED_DATE);
     });
     const authoritative = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A008');
+      return findByStudentRef(client, 'A008', SEED_DATE);
     });
 
     expect(derived!.hold_source).toBe('derived');
@@ -261,7 +264,7 @@ describe('Config flip — derived to authoritative with no deploy', () => {
   it('flipping derivation rules changes behavior without code change', async () => {
     // A001 currently has a derived hold (Tardy → Detention, hold_source=derived)
     const beforeFlip = await withTenant(db.appPool, TENANT_A_ID, async (client) => {
-      return findByStudentRef(client, 'A001');
+      return findByStudentRef(client, 'A001', SEED_DATE);
     });
     expect(beforeFlip!.hold_source).toBe('derived');
 

@@ -28,6 +28,9 @@ import {
 
 let db: TestDb;
 
+/** Fixed service date for ingested sheets — deterministic (PL-201). */
+const INGEST_DATE = '2030-03-15';
+
 beforeAll(async () => {
   db = await provisionTestDb();
 });
@@ -158,7 +161,9 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
 
     // Run ingestion
     const result = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return ingestSheet(client, { headers, rows }, mappings, derivationRules);
+      return ingestSheet(client, { headers, rows }, mappings, derivationRules, {
+        serviceDate: INGEST_DATE,
+      });
     });
 
     // 5 valid, 3 quarantined, 8 total
@@ -216,7 +221,7 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
   it('all valid rows are reachable by student_ref', async () => {
     for (const ref of ['T001', 'T002', 'T003', 'T004', 'T008']) {
       const entry = await withTenant(db.appPool, TENANT_A, async (client) => {
-        return findByStudentRef(client, ref);
+        return findByStudentRef(client, ref, INGEST_DATE);
       });
       expect(entry).not.toBeNull();
     }
@@ -232,7 +237,7 @@ describe('PL-006 · T-07: quarantined rows unreachable from lookup', () => {
     // T007 was quarantined (unknown reason_code)
     for (const ref of ['T005', 'T006', 'T007']) {
       const entry = await withTenant(db.appPool, TENANT_A, async (client) => {
-        return findByStudentRef(client, ref);
+        return findByStudentRef(client, ref, INGEST_DATE);
       });
       expect(entry).toBeNull();
     }
@@ -253,7 +258,7 @@ describe('PL-006 · T-07: quarantined rows unreachable from lookup', () => {
 
     // But T007 is NOT in roster_entries
     const entry = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return findByStudentRef(client, 'T007');
+      return findByStudentRef(client, 'T007', INGEST_DATE);
     });
     expect(entry).toBeNull();
   });
@@ -285,7 +290,9 @@ describe('PL-006 · edge cases', () => {
     const derivationRules = makeDerivationRules();
 
     const result = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return ingestSheet(client, { headers, rows }, mappings, derivationRules);
+      return ingestSheet(client, { headers, rows }, mappings, derivationRules, {
+        serviceDate: INGEST_DATE,
+      });
     });
 
     expect(result.rowsValid).toBe(2);
@@ -311,7 +318,9 @@ describe('PL-006 · edge cases', () => {
     const derivationRules = makeDerivationRules();
 
     const result = await withTenant(db.appPool, TENANT_A, async (client) => {
-      return ingestSheet(client, { headers, rows: [] }, mappings, derivationRules);
+      return ingestSheet(client, { headers, rows: [] }, mappings, derivationRules, {
+        serviceDate: INGEST_DATE,
+      });
     });
 
     expect(result.rowsIn).toBe(0);

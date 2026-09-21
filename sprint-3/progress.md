@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** ⬜ Harness written, no implementation. **Blocked at the gate:** P1 (measurement week) has not started, and P2/P3 are unanswered policy decisions that block PL-202 and PL-204.
+**Status:** 🟡 In progress. PL-201 ✅ (T-50…T-52 passing, full suite 228/228). **Still blocked at the policy gates:** P1 (measurement week) has not started, and P2/P3 are unanswered policy decisions that block PL-202 and PL-204.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **Start P1 today.** One week, three numbers, manual tally: early pickups per day, how many were called in that morning, and minutes from Slack post to leader response. No code depends on it; the sprint's justification does. (2) Get P2 and P3 on a calendar with the principal and VPs — both are short conversations with people who are hard to catch, which is the same problem this sprint is trying to solve. Bring the proposals in research.md §Spike Results, not open questions. (3) Start PL-201 in parallel — it depends on nothing and is on the critical path for both routing and the leader's pattern context. (4) **Open Q6 now, not at Sprint 5 planning.** Under AD-48 it is reopened from a no-caller-ID baseline: what second factor works on a shared device where nothing secret can be spoken aloud. It is the hardest open question in the project, it needs real parents in two languages, and it takes weeks of elapsed time against an hour of work.
+**Next action:** (1) **PL-212 — JWKS warm path + session-store decision.** It is the remaining unblocked implementation task (independent, any week); its AC is T-72 plus the recorded externalization trigger condition. (2) **Start P1 today** — one week, three numbers, manual tally: early pickups per day, how many were called in that morning, and minutes from Slack post to leader response. (3) Get P2 and P3 on a calendar with the principal and VPs — both are short conversations with people who are hard to catch, which is the same problem this sprint is trying to solve. Bring the proposals in research.md §Spike Results, not open questions. (4) **Open Q6 now, not at Sprint 5 planning.** Under AD-48 it is reopened from a no-caller-ID baseline: what second factor works on a shared device where nothing secret can be spoken aloud. It is the hardest open question in the project, it needs real parents in two languages, and it takes weeks of elapsed time against an hour of work.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). P3 blocks PL-202 and PL-210 (`reason_detail` clearance and retention). PL-209 blocked pending the Aircall capability probe.
 
@@ -62,7 +62,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 
 | ID     | Task                                    | Status | Notes                                                                                   |
 | ------ | --------------------------------------- | ------ | --------------------------------------------------------------------------------------- |
-| PL-201 | Roster grain: `service_date` + `student_id` | ⬜     | Depends on nothing. Start in parallel with P1. Carried from the Sprint 2 review as "housekeeping" — it is not |
+| PL-201 | Roster grain: `service_date` + `student_id` | ✅     | T-50…T-52 passing (tests/roster-grain.test.ts); full suite 228/228 incl. carried T-01…T-49 |
 | PL-202 | `pickup_requests` schema + state machine | ⬜     | **Blocked on P3** (clearance decision before the first row is written)                  |
 | PL-203 | Approver routing resolver               | ⬜     | The tribal-knowledge artifact (F-15). Cheapest high-value item in the sprint            |
 | PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
@@ -89,7 +89,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | Group                        | Written | Passing |
 | ---------------------------- | ------- | ------- |
 | T-01…T-49 (carried)          | 49      | 49      |
-| T-50…T-52 roster grain       | 0       | 0       |
+| T-50…T-52 roster grain       | 3       | 3       |
 | T-53…T-57 request lifecycle  | 0       | 0       |
 | T-58…T-59 routing            | 0       | 0       |
 | T-60…T-63 escalation         | 0       | 0       |
@@ -154,6 +154,31 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **The adversarial pass produced a novel result** — reachable behavior no green test covered — which satisfies the contract properly rather than a theoretical gap argued away.
 
 **Next action:** unchanged for Sprint 3 (P1 today, P2/P3 on a calendar, PL-201 in parallel, Q6 opened). **Sprint 2 repairs are Sprint 2's closure work, not Sprint 3 tasks:** move `tools/call` auditing to the HTTP layer, implement T-41 as specified, one-line T-32 header fix, drop `sessions` from `/health`.
+
+### Session 1 — PL-201 roster grain (2026-09-21)
+
+**Worked on:** PL-201 — `service_date` + `student_id` linkage. First implementation task of the sprint; read Failed Approaches first (no repeats).
+
+**Done:**
+
+- **Migration `0004_service_date.sql`** — `service_date date not null` on `roster_syncs` and `roster_entries`, backfilled from each row's sync start; composite `(tenant_id, service_date)` indexes on both. Backfill runs with RLS temporarily disabled (migrations execute as the table owner, FORCE RLS would evaluate the tenant policy with no `app.tenant_id`); re-enabled and re-forced immediately after. Fresh databases are no-ops.
+- **`students` repository** (`src/repositories/students.ts`) — `upsertStudent`: insert-when-absent keyed on `(tenant_id, student_ref)`; name/section refresh from the sheet, `do_not_call` deliberately untouched (staff-managed flag, F-4). Ingest calls it per valid row; every roster row now carries `student_id`.
+- **Dated sync set** — `runSync`/`ingestSheet` take an optional `serviceDate` (derived at run time, defaulting to local today via `src/util/service-date.ts`). `deleteAllEntries` is **gone**, replaced by `deleteEntriesForDate`; the quarantined wipe is scoped by the sync's service date the same way. The scheduler ticks today on every run rather than pinning a date on job config.
+- **Dated reads everywhere** — `findByStudentRef`, `findByStudentName`, `searchRosterEntries`, `countEntries`, and `existsByStudentRef` require an explicit service date (the data layer does not decide what "today" means); `getScholarStatus` derives today and accepts a request-pinned date so one request cannot straddle local midnight; `lookup_scholar_status` and `search_roster` derive the date once per request.
+- **Seed** writes a dated set (today by default, explicit for tests) and populates `students` the same way ingest does. **Disclosure:** `service_date` added to `FIELD_CLEARANCE` as `never` — projection default-deny already covered it; now it is documented like the other ingestion metadata.
+- **`src/db/pg-types.ts`** — the `date` OID parses as the raw `YYYY-MM-DD` string (see Surprises).
+
+**Tests:** T-50, T-51, T-52 written in `tests/roster-grain.test.ts` and passing; carried suite updated for the new signatures and green. **Full run 2026-09-21: 24 files, 228/228 passing, local Postgres, synthetic fixtures, fixed service dates in tests** (conditions recorded per test.md's run-log convention). Standing gate green: T-01…T-05, T-33…T-35, T-52. T-60/T-68 do not exist yet — they gate the sprint, not PL-201.
+
+**Surprises:**
+
+- **node-postgres parses `date` as a local-midnight JS Date.** In UTC+8 that round-trips to the *previous* day in UTC — the default parser is wrong for a calendar grain in half the world. The service date is not an instant (AD-31), so the `date` OID now parses as the stored string. `service_date` is the only `date`-typed column; `timestamptz` parsing is untouched.
+- **The wipe-before-ingest was the exact T-50 failure mechanism.** `deleteAllEntries` existed for T-11 idempotency and would have erased day 1 on day 2's first tick. Removing it (rather than adding a dated variant alongside) was the honest fix — leaving the unscoped delete in the codebase invites the wipe back.
+- **`summarizeQuarantine` claimed "most recent sync" but counted every row ever.** Harmless while the table was wiped each sync; after the grain change it would misreport across days. Now scoped to the latest sync, matching its own docstring.
+- **The name→ref resolution and the status read can straddle local midnight** if each computes "today" independently — the lookup tool now pins one service date per request. The bug is a one-in-a-day race, but it was free to close.
+- **A passing test caught the Date-parse lie on the first run** — `RosterEntry.service_date: string` was typed honestly but the runtime returned a Date. The failing assertion (T-50, date equality) was the system working as designed: the test could fail its own pass condition.
+
+**Next action:** PL-212 (JWKS warm path + session-store decision record) — the remaining unblocked implementation task. P2/P3 still gate PL-202/PL-204/PL-210; P1 measurement week still not started.
 
 ---
 
