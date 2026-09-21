@@ -5,9 +5,9 @@ All work follows: Research → Spike → Planning → Implementation → Evaluat
 ## Non-Negotiable Rules — Harness
 
 1. **Agent Separation:** the agent that builds does NOT evaluate its own work.
-2. **Artifact State:** only 4 files persist — research/research.md, planning/plan.md, implementation/progress.md, evaluation/test.md
+2. **Artifact State:** only 4 files persist per sprint — `sprint-N/research.md`, `sprint-N/plan.md`, `sprint-N/progress.md`, `sprint-N/test.md`. Hooks resolve the highest-numbered sprint copy; the canonical v3 paths (`research/research.md`, etc.) still match but nothing reads them here.
 3. **Context Budget:** research.md ≤40% of working context, others ≤20%. Compact aggressively.
-4. **Failed Approaches:** ALWAYS read implementation/progress.md → "Failed Approaches" before coding. Repeating a documented failure is a rubric penalty.
+4. **Failed Approaches:** ALWAYS read the active sprint's `sprint-N/progress.md` → "Failed Approaches" before coding. Repeating a documented failure is a rubric penalty.
 5. **Spike Before Commit:** uncertain integrations get a timeboxed spike before planning.
 
 ## Non-Negotiable Rules — Parent Line
@@ -21,12 +21,20 @@ This project handles **student education records (FERPA)**. These are enforced b
 10. **Degrade to human, never to a guess.** Stale sync, failed validation, unreachable dependency → "let me get someone for you." A confident wrong answer about a child is worse than no answer.
 11. **No query outside the repository layer.** No `pool.query` in application code.
 
+## Model Separation
+
+Generator and Evaluator run on **different model families**. Pick the model
+when you start each Cascade conversation, and never evaluate with the family
+that built the feature — a same-family evaluator tends to find reasonable
+exactly what the generator found reasonable. No hook can manufacture that
+kind of independence.
+
 ## Phase Routing
 
-- `/research/` → Researcher. Scope all work to the Phase 0a problem statement.
-- `/planning/` → Planner. Produce plan.md + Sprint Contract.
-- `/implementation/`, `/src/`, `/lib/` → Generator. Build per plan.md. Update progress.md.
-- `/evaluation/`, `/tests/` → Evaluator. Grade against Sprint Contract only. You do NOT read progress.md.
+- `sprint-N/research.md` → Researcher. Scope all work to the Phase 0a problem statement.
+- `sprint-N/plan.md` → Planner. Produce plan.md + Sprint Contract.
+- `/src/`, `/lib/`, `sprint-N/progress.md` → Generator. Build per plan.md. Update progress.md.
+- `sprint-N/test.md`, `/tests/` → Evaluator. Grade against Sprint Contract only. You do NOT read progress.md.
 
 ## Project Context
 

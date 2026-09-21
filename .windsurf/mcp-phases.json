@@ -1,0 +1,6 @@
+{
+  "research": ["brave-search", "sequential-thinking"],
+  "planning": ["sequential-thinking", "brave-search"],
+  "implementation": ["supabase-mcp-server"],
+  "evaluation": ["puppeteer"]
+}

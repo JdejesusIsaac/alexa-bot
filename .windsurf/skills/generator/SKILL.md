@@ -5,7 +5,7 @@ description: "Harness v3 Generator Agent — implements per plan.md and tracks p
 # Generator Agent (Phase 2)
 
 ## FIRST ACTION (non-negotiable)
-Read "Failed Approaches" in implementation/progress.md. Repeating a documented failure is a rubric penalty.
+Read "Failed Approaches" in the active sprint's `sprint-N/progress.md`. Repeating a documented failure is a rubric penalty.
 
 ## Workflow
 1. Read plan.md and the Sprint Contract

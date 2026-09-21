@@ -27,14 +27,14 @@ def main():
 
     low = fp.lower()
     if low.endswith(BANNED_EXT):
-        print("STUDENT DATA GUARD: blocked write of a spreadsheet file.")
-        print(f"  Path: {fp}")
-        print("  Roster exports never enter this repo. Use synthetic fixtures (see plan.md PL-011).")
+        print("STUDENT DATA GUARD: blocked write of a spreadsheet file.", file=sys.stderr)
+        print(f"  Path: {fp}", file=sys.stderr)
+        print("  Roster exports never enter this repo. Use synthetic fixtures (see plan.md PL-011).", file=sys.stderr)
         sys.exit(2)
 
     if any(b in fp.replace("\\", "/") for b in BANNED_PATH):
-        print("STUDENT DATA GUARD: blocked write to a real-data path.")
-        print(f"  Path: {fp}")
+        print("STUDENT DATA GUARD: blocked write to a real-data path.", file=sys.stderr)
+        print(f"  Path: {fp}", file=sys.stderr)
         sys.exit(2)
 
     # Inspect proposed content when the payload carries it
@@ -48,9 +48,9 @@ def main():
 
     for pat in LIVE_EXPORT_MARKERS:
         if re.search(pat, content, re.IGNORECASE):
-            print("STUDENT DATA GUARD: content looks like a live roster export or sheet URL.")
-            print(f"  Matched: {pat}")
-            print("  Record schema and column structure only — never rows, IDs, names, or document IDs.")
+            print("STUDENT DATA GUARD: content looks like a live roster export or sheet URL.", file=sys.stderr)
+            print(f"  Matched: {pat}", file=sys.stderr)
+            print("  Record schema and column structure only — never rows, IDs, names, or document IDs.", file=sys.stderr)
             sys.exit(2)
 
     sys.exit(0)

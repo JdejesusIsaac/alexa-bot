@@ -37,9 +37,6 @@
 
 > Max 10 lines. Survives context resets and sprint restarts.
 
-- Evaluator mischaracterized T-18's assertion — verify against source, never a report's characterization
-- Marking a task ✅ when code is written rather than when the AC is met — use 🔵
-- Zod `.nullable()` without `.default(null)` still requires the key present
 - RLS `WITH CHECK` rejects INSERT omitting `tenant_id`
 - Auth0 silently drops custom claims whose namespace is not a valid URL — ~2h across 6 probe runs
 - `source .env` crashes on multi-line `GOOGLE_SERVICE_ACCOUNT_JSON`
@@ -48,6 +45,8 @@
 - **A test that cannot fail its own pass condition** (Sprint 2 F-2) — state which AC clause each test can fail on
 - **Chasing the wrong binary** — Q3 sat blocked on the ASK CLI; the tool is the Alexa AI CLI
 - **Carrying a candidate list across a channel change.** The phone-era Q6 list assumed caller ID and one listener. Neither holds on a shared device; re-derive from the channel's properties, don't port the list
+- **A denial the agent can't read is a denial it can't act on.** v1 hooks blocked correctly but printed the reason to stdout; Windsurf delivers stderr to the agent on exit 2. When a hook blocks, check which stream the agent receives
+- **A parser that returns empty on the real shape looks like "nothing to check."** v1's `content_of()` missed `tool_info.edits[]`, so the semantic failure check silently never ran. Test hook input parsing against a captured payload, not an imagined one
 
 ---
 

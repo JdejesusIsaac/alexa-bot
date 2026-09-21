@@ -1,38 +1,48 @@
 #!/usr/bin/env python3
 """
-Harness v3 Hook: Evaluator Isolation
-Blocks the Evaluator from reading the Generator's progress.md.
-Primary signal: explicit phase state file. Fallback: recent test.md mtime.
-Exit 2 = BLOCK.
-"""
-import os, sys, time
-sys.path.insert(0, os.path.dirname(__file__))
-from _common import read_input, file_path, current_phase
+Harness Hook: Evaluator Isolation  (v2)
 
-def blocked():
-    print("EVALUATOR ISOLATION: cannot read progress.md during evaluation.")
-    print("  The Evaluator is structurally independent from the Generator.")
-    print("  You may read: the Sprint Contract (planning/plan.md) + the build.")
-    print("  To leave evaluation: echo implementation > .windsurf/state/phase")
-    sys.exit(2)
+Blocks the Evaluator from reading the Generator's progress.md — through the
+read path (pre_read_code, tool_info.file_path) AND the terminal
+(pre_run_command, tool_info.command_line). v1 guarded reads only, so
+`cat sprint-3/progress.md` in a Cascade terminal bypassed isolation entirely.
+
+Phase is per-conversation now (trajectory_id), with the legacy global
+.windsurf/state/phase as fallback. The 30-minute test.md mtime heuristic is
+gone: it blocked the generator chat whenever test.md had been edited
+recently. A conversation is in evaluation only if it led with /evaluate —
+or the legacy global file says so.
+
+Exit 2 = BLOCK. The reason goes to stderr — that is the stream the agent sees.
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+from _common import (
+    read_input, file_path, command_line, current_phase, trajectory_id,
+    block, ok,
+)
+
+MSG = (
+    "EVALUATOR ISOLATION: progress.md is the Generator's reasoning and "
+    "this conversation is in the evaluation phase.\n"
+    "  You may read: the Sprint Contract (sprint-N/plan.md + sprint-N/test.md) "
+    "and the build.\n"
+    "  To leave evaluation, start a prompt with /implement — the phase is "
+    "per-conversation, so this changes nothing in other chats."
+)
+
 
 def main():
-    fp = file_path(read_input()).replace("\\", "/")
-    if "progress.md" not in fp:
+    data = read_input()
+    target = (file_path(data) or command_line(data)).replace("\\", "/")
+    if "progress.md" not in target:
         sys.exit(0)
-
-    phase = current_phase()
-    if phase == "evaluation":
-        blocked()
-    if phase is not None:
-        sys.exit(0)   # explicit non-evaluation phase — allow
-
-    # Fallback heuristic only when no phase is declared
-    marker = "evaluation/test.md"
-    if os.path.exists(marker) and (time.time() - os.path.getmtime(marker)) < 1800:
-        blocked()
-
+    if current_phase(trajectory_id(data)) == "evaluation":
+        block(MSG)
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
