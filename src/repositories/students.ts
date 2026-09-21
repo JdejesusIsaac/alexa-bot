@@ -18,6 +18,8 @@ export interface Student {
   student_ref: string;
   student_name: string;
   section: string | null;
+  /** Routing-scope attribute (PL-203). Not yet sheet-populated — set per campus or by provisioning. */
+  grade: string | null;
   do_not_call: boolean;
 }
 

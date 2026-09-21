@@ -416,6 +416,32 @@ export const TENANT_B_DERIVATION_RULES: readonly DerivationRuleSeed[] = [
   },
 ];
 
+// ── Approver routing per tenant (PL-203 seeds) ─────────────────────────
+// The tribal-knowledge artifact (F-15): a named approver per section and
+// a tenant-wide default, so resolution is total. Approver ids are
+// synthetic constants — they resolve against staff_identities (PL-205).
+
+export const TENANT_A_APPROVER_SECTION = '5e5e5e5e-5e5e-5e5e-5e5e-5e5e5e5e5e5e';
+export const TENANT_A_APPROVER_DEFAULT = '6f6f6f6f-6f6f-6f6f-6f6f-6f6f6f6f6f6f';
+export const TENANT_B_APPROVER_SECTION = '7a7a7a7a-7a7a-7a7a-7a7a-7a7a7a7a7a7a';
+export const TENANT_B_APPROVER_DEFAULT = '8b8b8b8b-8b8b-8b8b-8b8b-8b8b8b8b8b8b';
+
+export interface RoutingSeed {
+  scopeType: 'section' | 'grade' | 'default';
+  scopeValue?: string;
+  approverId: string;
+}
+
+export const TENANT_A_ROUTING: readonly RoutingSeed[] = [
+  { scopeType: 'section', scopeValue: '101', approverId: TENANT_A_APPROVER_SECTION },
+  { scopeType: 'default', approverId: TENANT_A_APPROVER_DEFAULT },
+];
+
+export const TENANT_B_ROUTING: readonly RoutingSeed[] = [
+  { scopeType: 'section', scopeValue: '201', approverId: TENANT_B_APPROVER_SECTION },
+  { scopeType: 'default', approverId: TENANT_B_APPROVER_DEFAULT },
+];
+
 // ── Convenience: all fixture data in one structure ─────────────────────
 
 export interface TenantFixture {
@@ -424,6 +450,7 @@ export interface TenantFixture {
   mappings: readonly MappingSeed[];
   sheet: SheetRow;
   derivationRules: readonly DerivationRuleSeed[];
+  routing: readonly RoutingSeed[];
 }
 
 export const FIXTURES: readonly TenantFixture[] = [
@@ -433,6 +460,7 @@ export const FIXTURES: readonly TenantFixture[] = [
     mappings: TENANT_A_MAPPINGS,
     sheet: TENANT_A_SHEET,
     derivationRules: TENANT_A_DERIVATION_RULES,
+    routing: TENANT_A_ROUTING,
   },
   {
     tenantId: TENANT_B,
@@ -440,5 +468,6 @@ export const FIXTURES: readonly TenantFixture[] = [
     mappings: TENANT_B_MAPPINGS,
     sheet: TENANT_B_SHEET,
     derivationRules: TENANT_B_DERIVATION_RULES,
+    routing: TENANT_B_ROUTING,
   },
 ];

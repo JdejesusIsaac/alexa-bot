@@ -31,6 +31,7 @@ const RLS_TABLES = [
   'pickup_requests',
   'pickup_request_events',
   'tenant_settings',
+  'approver_routing',
 ];
 
 let db: TestDb;

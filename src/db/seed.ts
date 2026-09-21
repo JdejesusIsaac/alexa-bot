@@ -85,6 +85,28 @@ export async function seed(options?: SeedOptions): Promise<SyncResult[]> {
         );
       }
 
+      // 3b. Insert approver routing rules (PL-203 — the tribal-knowledge
+      // artifact, F-15), then validate totality LOUDLY: a tenant with no
+      // default rule fails here, at seed time — not when the first
+      // unmatched request resolves to nobody at 1:50 pm (T-59).
+      for (const rule of fixture.routing) {
+        await client.query(
+          `insert into approver_routing (tenant_id, scope_type, scope_value, approver_id)
+           values ($1, $2, $3, $4)`,
+          [fixture.tenantId, rule.scopeType, rule.scopeValue ?? null, rule.approverId],
+        );
+      }
+      const defaultRules = await client.query<{ count: string }>(
+        `select count(*)::text as count from approver_routing
+         where tenant_id = $1 and scope_type = 'default'`,
+        [fixture.tenantId],
+      );
+      if (parseInt(defaultRules.rows[0]!.count, 10) !== 1) {
+        throw new Error(
+          `approver routing is not total for tenant ${fixture.tenantId}: no default rule (T-59)`,
+        );
+      }
+
       // 4. Create a roster sync record for the service date
       const syncRes = await client.query<{ id: string }>(
         `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, rows_quarantined, outcome)

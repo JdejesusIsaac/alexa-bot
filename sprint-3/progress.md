@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅ (T-50…T-52, T-72, T-53…T-57 passing; full suite 250/250). **P3 resolved as a product default (Session 3)** — PL-203, PL-205, PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59 passing; full suite 262/262). **P3 resolved as a product default (Session 3)** — PL-205, PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-203 — approver routing resolver**, the next task in plan order and unblocked by PL-202. Its AC is T-58 (resolution deterministic, most-specific-wins, total) and T-59 (a tenant without a `default` routing rule fails at seed time, not at 1:50 pm). Then PL-205 → PL-206 → PL-208 → PL-210 → PL-211 in plan order. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
+**Next action:** (1) **PL-205 — `staff_identities` + Slack actor mapping**, next in plan order [PL-202 ✓]. Its AC is T-64 (an unmapped Slack actor cannot decide — typed refusal, audited, no state change) and T-67 (every decision audited with a resolved subject). Then PL-206 → PL-208 → PL-210 → PL-211. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -64,7 +64,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | ------ | --------------------------------------- | ------ | --------------------------------------------------------------------------------------- |
 | PL-201 | Roster grain: `service_date` + `student_id` | ✅     | T-50…T-52 passing (tests/roster-grain.test.ts); full suite 228/228 incl. carried T-01…T-49 |
 | PL-202 | `pickup_requests` schema + state machine | ✅     | T-53…T-57 passing. P3 enforced at the chokepoint: `reason_detail` purged at terminal states, per-tenant retention (`tenant_settings`), nightly sweep |
-| PL-203 | Approver routing resolver               | ⬜     | The tribal-knowledge artifact (F-15). Cheapest high-value item in the sprint            |
+| PL-203 | Approver routing resolver               | ✅     | T-58, T-59 passing. Most-specific-wins (section > grade > default), total, deterministic; totality fails loudly at seed (assert wired into `npm run seed`) |
 | PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
 | PL-205 | `staff_identities` + Slack actor mapping | ⬜     | Without it, E5 degrades silently at the one point a human decided                       |
 | PL-206 | Slack notification surface (outbound)   | ⬜     | Category + link only. Never `reason_detail`                                             |
@@ -91,7 +91,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-01…T-49 (carried)          | 49      | 49      |
 | T-50…T-52 roster grain       | 3       | 3       |
 | T-53…T-57 request lifecycle  | 5       | 5       |
-| T-58…T-59 routing            | 0       | 0       |
+| T-58…T-59 routing            | 2       | 2       |
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 0     | 0       |
 | T-68…T-70 disclosure         | 0       | 0       |
@@ -218,6 +218,27 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **T-53 and T-57 could have conflicted** — both write event rows, and a refusal event at the request's current level would collide with that level's ladder event. NULL-level refusal events resolve it without weakening either guarantee.
 
 **Next action:** PL-203 (approver routing resolver) — unblocked; AC is T-58 and T-59. Then PL-205 → PL-206 → PL-208 → PL-210 → PL-211 in plan order. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 4 — PL-203 approver routing resolver (2026-09-21)
+
+**Worked on:** PL-203 — the tribal-knowledge artifact (F-15): `approver_routing` + the resolver. Built across the branch interruption: the harness/v2 rework stashed this WIP mid-flight (recovered via stash pop after the user committed their harness work as `a5873c5`).
+
+**Done:**
+
+- **Migration `0006_approver_routing.sql`** — the `approver_routing` table: `scope_type` (section | grade | default), `scope_value`, `approver_id` (uuid, resolves against `staff_identities` in PL-205 — same forward-compatible pattern as `assigned_approver_id`), `priority`. RLS enabled and forced, full CRUD grants (config, tenant-scoped). **`students.grade`** added (nullable): the attribute grade rules match, populated per campus when their sheet carries it; a null grade simply never matches and falls through.
+- **Totality is structural:** a partial unique index (`one default per tenant`) plus the seed-time assertion `assertApproverRoutingTotal` — wired into `npm run seed`, which now seeds a section rule and a default per fixture tenant and **throws** if a tenant lacks a default (T-59's loud failure, not a 1:50 pm nobody).
+- **The resolver** (`src/repositories/approver-routing.ts`) — most-specific-wins (section > grade > default), deterministic by construction (one section and one grade per scholar; unique rules; a total-order fallback on priority then scope value), total via the default rule. No-match-with-no-default is a typed refusal `routing_not_total` — the caller degrades to a human (Rule 10). An invisible scholar is `student_not_found`, indistinguishable from nonexistent.
+- **Tests** (`tests/approver-routing.test.ts`, 12): T-58 (section beats grade beats default; grade over default; default catches the rest; null grade never matches; same input → same approver ×10; every scholar resolves to exactly one; colliding section codes stay tenant-scoped) and T-59 (totality assertion throws `RoutingNotTotalError`; resolver refuses rather than resolving to nobody; `student_not_found`; a second default row rejected as 23505 — the partial unique index; adding the default makes resolution total).
+
+**Full run 2026-09-21: 26 files, 262/262 passing** (250 + 12), local Postgres, synthetic fixtures. Standing gate green.
+
+**Surprises:**
+
+- **`NULLS NOT DISTINCT` has a syntax order** — the modifier goes before the column list, not after (`unique nulls not distinct (cols)`). First draft put it after and got a syntax error. Resolved with the clearer form anyway: a plain unique for rule dedup plus a partial unique index that says "one default per tenant" directly.
+- **The plan's grade scope had no source.** `students` carried no grade — T-58's grade rule had nothing to match. The registry gains a nullable `grade`, populated per campus when their sheet maps it (a canonical widening, by written decision) or at provisioning. Documented in the migration rather than silently derived from section codes — a section→grade convention would have been an invention.
+- **A mid-flight branch switch by the user stashed this WIP** — the recovery path (commit their harness work, switch, pop, restore untracked files) is recorded here because the stash's message is the only durable trace of the interruption.
+
+**Next action:** PL-205 (`staff_identities` + Slack actor mapping) — AC T-64, T-67. Then PL-206 → PL-208 → PL-210 → PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
 
 ---
 
