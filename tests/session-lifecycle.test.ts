@@ -11,12 +11,18 @@
  *       inside the Alexa+ budget headroom.
  * T-49: an unexpected `Origin` is rejected; a standalone GET returns
  *       immediately with 405 — nothing ever hangs.
+ * T-72: a fresh app serves its first authenticated request from the
+ *       startup-warmed JWKS cache — no network fetch on the request
+ *       path (PL-212: a cold fetch in the request path is a defect,
+ *       not a cost).
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
 import { startTestMcpServer, type TestMcpServer } from './helpers/mcp-server.js';
 import { McpTestClient } from './helpers/mcp-client.js';
 import { createMcpApp } from '../src/mcp/http.js';
+import { createLogger } from '../src/logging/logger.js';
 import { TENANT_A } from '../src/fixtures/synthetic-data.js';
 
 let server: TestMcpServer;
@@ -30,6 +36,18 @@ beforeAll(async () => {
     sweepIntervalMs: 150,
   });
   client = new McpTestClient(server.mcpUrl);
+
+  // The shared app's startup JWKS warm is fire-and-forget by design (E3).
+  // Quiesce it before any test measures fetch counts against the same AS —
+  // an in-flight warm landing inside a test's window would masquerade as
+  // a request-path fetch. The count reaching 1 means the AS served the
+  // document; jose resolves the warm on that same response before the
+  // next poll tick.
+  const warmDeadline = Date.now() + 5_000;
+  while (server.as.jwksFetchCount < 1 && Date.now() < warmDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  expect(server.as.jwksFetchCount).toBeGreaterThanOrEqual(1);
 });
 
 afterAll(async () => {
@@ -234,6 +252,79 @@ describe('PL-113 · T-48: cold-JWKS latency', () => {
       expect(server.as.jwksFetchCount).toBe(before);
     } finally {
       await app.close();
+    }
+  });
+});
+
+// ── T-72: cold JWKS served from a warm cache ─────────────────────────
+
+describe('PL-212 · T-72: cold JWKS served from a warm cache', () => {
+  it('a fresh app serves the first authenticated request from the startup-warmed cache — no fetch on the request path', async () => {
+    const before = server.as.jwksFetchCount;
+
+    // A capturing logger at info level: the startup warm logs
+    // `jwks_warmed` AFTER the fetch resolves into the cache, which is
+    // the provable "warm before the first request" signal. Polling the
+    // fetch count alone is not — it increments when the AS serves the
+    // document, before jose resolves the warm.
+    const lines: string[] = [];
+    const logger = createLogger({ logLevel: 'info' }, {
+      write: (line: string) => {
+        lines.push(line);
+      },
+    } as NodeJS.WritableStream);
+
+    // Fresh process: startup warm on (the default), refresh timer far
+    // out so no timer fetch can contaminate the measurement.
+    const app = createMcpApp({
+      config: server.config,
+      appPool: server.db.appPool,
+      logger,
+      jwksRefreshIntervalMs: 60_000,
+    });
+
+    const httpServer = createServer((req, res) => {
+      void app.handleRequest(req, res).catch(() => {
+        if (!res.headersSent) res.writeHead(500).end();
+      });
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+    const address = httpServer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('fresh test server failed to bind');
+    }
+    const freshUrl = `http://127.0.0.1:${address.port}/mcp`;
+
+    try {
+      // Wait for the startup warm to complete before the first request
+      // — issuing it during the warm would leave the request coalesced
+      // with the in-flight fetch, paying the network wait.
+      const deadline = Date.now() + 5_000;
+      while (!lines.some((l) => l.includes('jwks_warmed')) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(
+        lines.some((l) => l.includes('jwks_warmed')),
+        'startup warm completed',
+      ).toBe(true);
+
+      // The startup warm performed exactly one fetch — nothing else ran.
+      const afterWarm = server.as.jwksFetchCount;
+      expect(afterWarm).toBe(before + 1);
+
+      // The FIRST authenticated request on the fresh process.
+      const token = await server.mintToken({ tenantId: TENANT_A });
+      const freshClient = new McpTestClient(freshUrl);
+      const res = await freshClient.initialize({ token });
+      expect(res.status).toBe(200);
+
+      // Served from the warm cache — no network fetch on the request
+      // path. This closes the Sprint 2 carry-over: the cold fetch
+      // measured at up to 500 ms belongs at startup, never in a request.
+      expect(server.as.jwksFetchCount).toBe(afterWarm);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
   });
 });

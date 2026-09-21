@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅ (T-50…T-52 passing, full suite 228/228). **Still blocked at the policy gates:** P1 (measurement week) has not started, and P2/P3 are unanswered policy decisions that block PL-202 and PL-204.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅ (T-50…T-52, T-72 passing; full suite 229/229). **All remaining tasks are gated on policy decisions:** P3 blocks PL-202 (and everything downstream), P2 blocks PL-204, and PL-209 additionally needs the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-212 — JWKS warm path + session-store decision.** It is the remaining unblocked implementation task (independent, any week); its AC is T-72 plus the recorded externalization trigger condition. (2) **Start P1 today** — one week, three numbers, manual tally: early pickups per day, how many were called in that morning, and minutes from Slack post to leader response. (3) Get P2 and P3 on a calendar with the principal and VPs — both are short conversations with people who are hard to catch, which is the same problem this sprint is trying to solve. Bring the proposals in research.md §Spike Results, not open questions. (4) **Open Q6 now, not at Sprint 5 planning.** Under AD-48 it is reopened from a no-caller-ID baseline: what second factor works on a shared device where nothing secret can be spoken aloud. It is the hardest open question in the project, it needs real parents in two languages, and it takes weeks of elapsed time against an hour of work.
+**Next action:** **No unblocked implementation tasks remain — the critical path is human.** (1) **P3 (`reason_detail` clearance + retention) is the keystone:** it gates PL-202, and every remaining task depends on PL-202. Get it answered with leadership and network ops; until then PL-203…PL-211 and PL-213 cannot start. (2) **P2 (escalation ladder)** gates PL-204 — same conversation, principal and VPs; bring the research.md §Spike Results proposal, not the question. (3) **Start P1 today** — one week, three numbers, manual tally: early pickups per day, how many were called in that morning, minutes from Slack post to leader response. (4) **Open Q6 now, not at Sprint 5 planning** — real parents, two languages, weeks of elapsed time against an hour of work. (5) PL-209 needs the **Aircall capability probe** before building: credentials + observation of what the API actually exposes (the PL-101 lesson — never documentation).
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). P3 blocks PL-202 and PL-210 (`reason_detail` clearance and retention). PL-209 blocked pending the Aircall capability probe.
 
@@ -73,7 +73,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
 | PL-210 | Disclosure extension                    | ⬜     | **Blocked on P3.** Also demotes `reason_code` per the Sprint 2 review finding           |
 | PL-211 | Time-to-decision instrumentation        | ⬜     | New SLO. The 500 ms budget does not govern this surface — say so in the runbook          |
-| PL-212 | JWKS warm path + session-store decision | ⬜     | Independent, any week. Decide the session store; build only on trigger                  |
+| PL-212 | JWKS warm path + session-store decision | ✅     | T-72 passing. Warm path was already built in Sprint 2 — T-72 is the missing proof. AD-52 records the externalization trigger |
 | PL-213 | Campus pilot                            | ⬜     | One week, one campus, coordinator + two approvers                                       |
 
 **Legend:** ⬜ Not started · 🟡 In progress · 🔵 **Code-complete, AC unverified** · ✅ AC met and verified · 🔴 Blocked · ⏸️ Paused
@@ -95,7 +95,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 0     | 0       |
 | T-68…T-70 disclosure         | 0       | 0       |
-| T-71…T-73 intake + ops       | 0       | 0       |
+| T-71…T-73 intake + ops       | 1       | 1       |
 
 **Gate this sprint:** T-01…T-05, T-33…T-35, **plus T-52, T-60, T-68.** Run before every commit.
 
@@ -180,6 +180,23 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 
 **Next action:** PL-212 (JWKS warm path + session-store decision record) — the remaining unblocked implementation task. P2/P3 still gate PL-202/PL-204/PL-210; P1 measurement week still not started.
 
+### Session 2 — PL-212 JWKS warm path + session-store decision (2026-09-21)
+
+**Worked on:** PL-212 — the last unblocked implementation task in the sprint.
+
+**Done:**
+
+- **T-72 written and passing** (`tests/session-lifecycle.test.ts`): a fresh app serves its **first authenticated request** from the startup-warmed JWKS cache — the AS's fetch count does not move across the request. The test waits for the `jwks_warmed` log line, which fires *after* the warm resolves, rather than polling the fetch count; the count increments when the AS serves the document but before jose resolves it into the cache, so count-polling alone leaves a window where the request would coalesce with the in-flight fetch and pay the network wait.
+- **The warm path itself was already built in Sprint 2** (`c04fba5`): construction prefetch, refresh timer, `resetJwksCache` for T-48, and T-48's own warm/cold measurements. What was missing was exactly T-72's claim — that the *first* request on a fresh process never pays the fetch. **No production code changed for the warm path.**
+- **AD-52 recorded** (research.md §4 rev 5): the session store stays in process memory until a second web instance exists. Sessions hold transports only — identity is re-derived from the token on every request (AD-18), so a lost map costs a client a re-initialize, never an auth bypass or a cross-tenant disclosure. **Triggers, either forces the move:** a second web instance behind a load balancer (a session initialized on A 404s on B — a hard client failure under the T-47 typed-404 rule, not a retry), or autoscaling the web tier. Target when it fires: **Postgres**, the system of record already in the stack — the same no-new-infrastructure reasoning as AD-30.
+
+**Surprises:**
+
+- **The shared test server's fire-and-forget startup warm raced T-72's fetch-count measurement** — visible only when the test ran filtered (`-t T-72`), because no earlier requests had quiesced the shared server's warm. Fixed by quiescing in `beforeAll` (poll the AS fetch count to 1) rather than loosening the assertion; the count reaching 1 means the AS served the document, and jose resolves the warm on that same response before the next poll tick.
+- **The sprint's remaining critical path contains no engineering.** PL-202 waits on P3; every remaining task depends on PL-202; PL-204 additionally on P2; PL-209 on the Aircall probe. With PL-201 and PL-212 done, the Generator has nothing unblocked left to build — the honest next actions are the two policy conversations, the measurement week, and Q6.
+
+**Next action:** None unblocked for the Generator. P3 → PL-202 → the rest, in plan order. See Current state above.
+
 ---
 
 ## Decisions made mid-sprint
@@ -200,6 +217,7 @@ _Anything settled here must also land in `research/research.md` §4 **the same s
 | S0      | **AD-48 Alexa+ is the product surface**         | Aircall demoted to a later capability on the same server; Q6 reopened no-caller-ID     | ✅ §4 rev 4    |
 | S0      | Rubric reweighted: Disclosure 40%, Auth 25%     | First sprint storing sensitive content on purpose and moving a child                   | ⬜ pending     |
 | S0      | **AD-42 audit at the rejecting boundary**       | Sprint 2 evaluation F-1: pre-dispatch rejections reached no handler, so no row was written | ✅ §4 rev 2 |
+| S2      | **AD-52 session store in-memory until a second web instance** | PL-212: sessions hold transports only (AD-18), so the single-instance assumption holds; second instance or autoscale forces the move — to Postgres, not a broker | ✅ §4 rev 5 |
 
 **⬜ pending is a debt, not a status.** Sprint 2 kept this table reconciled every session; do the same.
 
