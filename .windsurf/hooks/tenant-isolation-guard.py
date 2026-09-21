@@ -30,18 +30,18 @@ def main():
 
     if not any(seg in fp for seg in REPO_LAYER):
         if re.search(r"\b(pool|client|db)\.query\s*\(", content):
-            print("TENANT ISOLATION GUARD: raw query outside the repository layer.")
-            print(f"  File: {fp}")
-            print("  All data access goes through src/repositories/ under withTenant().")
-            print("  A query written without a tenant filter is a cross-tenant leak (test T-01).")
+            print("TENANT ISOLATION GUARD: raw query outside the repository layer.", file=sys.stderr)
+            print(f"  File: {fp}", file=sys.stderr)
+            print("  All data access goes through src/repositories/ under withTenant().", file=sys.stderr)
+            print("  A query written without a tenant filter is a cross-tenant leak (test T-01).", file=sys.stderr)
             sys.exit(2)
 
     if not any(seg in fp for seg in AUTH_LAYER):
         if re.search(r"(tenantId|tenant_id)\s*[?]?\s*:\s*string", content):
-            print("TENANT ISOLATION GUARD: tenant_id appears as a parameter.")
-            print(f"  File: {fp}")
-            print("  tenant_id is derived server-side from the session, never passed in.")
-            print("  An external model fills tool arguments (AGENTS.md rule 7).")
+            print("TENANT ISOLATION GUARD: tenant_id appears as a parameter.", file=sys.stderr)
+            print(f"  File: {fp}", file=sys.stderr)
+            print("  tenant_id is derived server-side from the session, never passed in.", file=sys.stderr)
+            print("  An external model fills tool arguments (AGENTS.md rule 7).", file=sys.stderr)
             sys.exit(2)
 
     sys.exit(0)

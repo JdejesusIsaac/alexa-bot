@@ -21,6 +21,14 @@ This project handles **student education records (FERPA)**. These are enforced b
 10. **Degrade to human, never to a guess.** Stale sync, failed validation, unreachable dependency → "let me get someone for you." A confident wrong answer about a child is worse than no answer.
 11. **No query outside the repository layer.** No `pool.query` in application code.
 
+## Model Separation
+
+Generator and Evaluator run on **different model families**. Pick the model
+when you start each Cascade conversation, and never evaluate with the family
+that built the feature — a same-family evaluator tends to find reasonable
+exactly what the generator found reasonable. No hook can manufacture that
+kind of independence.
+
 ## Phase Routing
 
 - `sprint-N/research.md` → Researcher. Scope all work to the Phase 0a problem statement.

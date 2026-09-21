@@ -5,12 +5,10 @@ Harness Hook: Failure Check  (Jev-backed)
 Before an implementation write, check the proposed change against the
 documented Failed Approaches in progress.md.
 
-WHY THIS CHANGED (harness review, 2026-09-20):
-  The previous version read `implementation/progress.md`, which does not exist
-  in this repo — all work lives in sprint-N/. It has therefore never fired.
-  Failed Approaches has been maintained by discipline alone for three sprints.
-  It also only *printed* the list: matching a diff against a prose failure is a
-  judgment, not a string comparison, so the hook could never do the real job.
+v2: content_of() now reads tool_info.edits[].new_string — the documented
+pre_write_code shape — so the semantic check actually runs on real edits.
+v1 read only content/new_str/..., got "" every time, and silently skipped
+the Jev path on every real edit.
 
 ADVISORY ONLY. Exit 0 always. A repeat is a rubric penalty, not a build break,
 and blocking on a probabilistic match would train people to disable the hook.
@@ -22,7 +20,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import read_input, file_path, content_of, artifact, artifact_kind
+from _common import read_input, file_path, content_of, artifact, artifact_kind, ok
 import _jev
 
 IMPL_DIRS = ("src/", "lib/", "scripts/", "tests/", "implementation/")
@@ -81,11 +79,10 @@ def main():
     change = content_of(data)
 
     if not _jev.enabled() or not change.strip():
-        print(f"FAILURE CHECK: {len(failures)} documented failed approach(es):")
-        for item in failures[:5]:
-            print(f"  - {item[:100]}")
-        print("  Do NOT repeat these. The Evaluator flags repeats as a rubric penalty.")
-        sys.exit(0)
+        lines = "\n".join(f"  - {item[:100]}" for item in failures[:5])
+        ok(f"FAILURE CHECK: {len(failures)} documented failed approach(es):\n"
+           f"{lines}\n"
+           "  Do NOT repeat these. The Evaluator flags repeats as a rubric penalty.")
 
     # One atomic question per failure, batched into a single call. Each is
     # evaluated in parallel and in isolation, so adding failures costs latency
@@ -117,31 +114,36 @@ def main():
     )
 
     if answers is None:
-        print(f"FAILURE CHECK: {len(failures)} documented failed approach(es) "
-              "(semantic check unavailable — listing only):")
-        for item in failures[:5]:
-            print(f"  - {item[:100]}")
-        sys.exit(0)
+        lines = "\n".join(f"  - {item[:100]}" for item in failures[:5])
+        ok(f"FAILURE CHECK: {len(failures)} documented failed approach(es) "
+           "(semantic check unavailable — listing only):\n"
+           f"{lines}")
 
-    hits = []
+    hits, decisions = [], []
     for i, text in enumerate(failures[:12]):
         p = _jev.noul(answers, f"f{i}", default=0.0)
-        if p >= MENTION:
+        if p >= LOUD:
             hits.append((p, text))
+            decisions.append((f"f{i}", "likely", p))
+        elif p >= MENTION:
+            hits.append((p, text))
+            decisions.append((f"f{i}", "possible", p))
+        else:
+            decisions.append((f"f{i}", "clear", p))
     hits.sort(reverse=True)
+    _jev.log_decisions("failure-check", decisions)
 
     if not hits:
-        print(f"Failure check passed: no documented failure matches this change "
-              f"({len(failures)} checked).")
-        sys.exit(0)
+        ok(f"Failure check passed: no documented failure matches this change "
+           f"({len(failures)} checked).")
 
-    print("FAILURE CHECK: this change may repeat a documented failure.")
-    for p, text in hits[:3]:
-        level = "LIKELY" if p >= LOUD else "possible"
-        print(f"  [{level} {p:.2f}] {text[:140]}")
-    print(f"  File: {fp}")
-    print("  Advisory only — the Evaluator flags repeats as a rubric penalty.")
-    sys.exit(0)
+    lines = "\n".join(
+        f"  [{'LIKELY' if p >= LOUD else 'possible'} {p:.2f}] {text[:140]}"
+        for p, text in hits[:3])
+    ok("FAILURE CHECK: this change may repeat a documented failure.\n"
+       f"{lines}\n"
+       f"  File: {fp}\n"
+       "  Advisory only — the Evaluator flags repeats as a rubric penalty.")
 
 
 if __name__ == "__main__":

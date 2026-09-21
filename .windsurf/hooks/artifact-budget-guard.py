@@ -3,14 +3,13 @@
 Harness Hook: Artifact Budget Guard
 Blocks writes to artifacts already over their context budget. Exit 2 = BLOCK.
 
-CHANGED 2026-09-20: matched only `fp.endswith("planning/plan.md")` and friends,
-so no sprint-N/ path could ever satisfy it. Inert since sprint folders began.
+v2: the denial goes to stderr (the stream the agent sees); notices to stdout.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import read_input, file_path, artifact_kind, BUDGETS, ARTIFACTS
+from _common import read_input, file_path, artifact_kind, BUDGETS, block, ok
 
 
 def main():
@@ -25,14 +24,12 @@ def main():
 
     size = os.path.getsize(fp)
     if size > limit:
-        print(f"BUDGET GUARD: {fp} is over budget")
-        print(f"  Current: {size:,} bytes / Limit: {limit:,}")
-        print("  Compact before adding content: merge overlapping points,")
-        print("  drop stale detail, keep only what future-you must be primed with.")
-        sys.exit(2)
+        block(f"BUDGET GUARD: {fp} is over budget\n"
+              f"  Current: {size:,} bytes / Limit: {limit:,}\n"
+              "  Compact before adding content: merge overlapping points,\n"
+              "  drop stale detail, keep only what future-you must be primed with.")
 
-    print(f"Budget OK: {fp} ({size:,}/{limit:,}, {limit-size:,} free)")
-    sys.exit(0)
+    ok(f"Budget OK: {fp} ({size:,}/{limit:,}, {limit-size:,} free)")
 
 
 if __name__ == "__main__":

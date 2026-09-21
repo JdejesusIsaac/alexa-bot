@@ -21,13 +21,21 @@ API shape verified 2026-09-20 against https://docs.typesafe.ai/api
 
 Known quirk: malformed-question validation returns 400, not the documented
 422 (typesafe-ai/skills#1). Do not branch on 422.
+
+v2: decisions are logged to .windsurf/state/jev-decisions.jsonl as
+{ts, hook, qid, label, prob} — never the state. This is how the
+0.35 / 0.55 / 0.65 thresholds get tuned on real traces instead of guessed.
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
 ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env")
+JEV_LOG = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "state",
+    "jev-decisions.jsonl")
 
 
 def _env(name):
@@ -127,3 +135,26 @@ def noul(answers, qid, default=None):
         return default
     v = a.get("noul")
     return v if isinstance(v, (int, float)) else default
+
+
+def log_decisions(hook, entries):
+    """Append Jev decisions to the tuning log.
+
+    entries: iterable of (qid, label, prob). `label` is the classification the
+    hook assigned (e.g. "unresolved", "hit"), NEVER the marker/failure text —
+    the state stays out of the log. Best-effort: a logging failure must not
+    change what the hook decided.
+    """
+    try:
+        os.makedirs(os.path.dirname(JEV_LOG), exist_ok=True)
+        with open(JEV_LOG, "a", encoding="utf-8") as f:
+            for qid, label, prob in entries:
+                f.write(json.dumps({
+                    "ts": int(time.time()),
+                    "hook": hook,
+                    "qid": qid,
+                    "label": label,
+                    "prob": prob,
+                }) + "\n")
+    except OSError:
+        pass

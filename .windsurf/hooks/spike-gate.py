@@ -5,14 +5,8 @@ Harness Hook: Spike Validation Gate  (Jev-backed)
 Blocks writes to the plan artifact while research.md still carries unresolved
 spike markers. Exit 2 = BLOCK.
 
-WHY THIS CHANGED (harness review, 2026-09-20):
-  1. It only fired on paths containing "planning/", so sprint-N/plan.md never
-     matched. Inert.
-  2. It counted the literal string "SPIKE:" — the Sprint 3/4/5 research files
-     write `SPIKE` in backticks with no colon, so they registered zero markers.
-  3. Resolution was one repo-wide boolean: a single "## Spike Results" heading
-     anywhere satisfied any number of markers, forever. Already on the deferred
-     list as "tighten the spike gate to match markers to resolutions."
+v2: denials go to stderr (the stream the agent sees on exit 2); Jev decisions
+are logged to .windsurf/state/jev-decisions.jsonl for threshold tuning.
 
 BLOCKING POLICY — asymmetric on purpose:
   - Deterministic evidence blocks: markers present and no Spike Results section
@@ -27,7 +21,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import read_input, file_path, artifact_for, is_artifact
+from _common import read_input, file_path, artifact_for, is_artifact, block, ok
 import _jev
 
 # Matches SPIKE:, `SPIKE`, **SPIKE**, SPIKE (open) — anything on a line that
@@ -59,9 +53,8 @@ def main():
 
     research = artifact_for(fp, "research")
     if not research:
-        print("SPIKE GATE: no research.md found (canonical or sprint-*/).")
-        print("  Complete Phase 0b before planning.")
-        sys.exit(2)
+        block("SPIKE GATE: no research.md found (canonical or sprint-*/).\n"
+              "  Complete Phase 0b before planning.")
 
     try:
         with open(research, encoding="utf-8") as f:
@@ -74,22 +67,20 @@ def main():
         sys.exit(0)
 
     if not RESULTS.search(content):
-        print(f"SPIKE GATE: {len(markers)} spike marker(s) in {research}, "
-              "no 'Spike Results' section.")
-        for line in markers[:5]:
-            print(f"  - {line[:120]}")
-        print("  Complete Phase 0.5 before planning.")
-        print("  Protocol: timebox -> Go/No-Go -> append results to research.md")
-        sys.exit(2)
+        lines = "\n".join(f"  - {line[:120]}" for line in markers[:5])
+        block(f"SPIKE GATE: {len(markers)} spike marker(s) in {research}, "
+              "no 'Spike Results' section.\n"
+              f"{lines}\n"
+              "  Complete Phase 0.5 before planning.\n"
+              "  Protocol: timebox -> Go/No-Go -> append results to research.md")
 
     # A Spike Results section exists. Old behaviour stopped here and allowed the
     # write. Ask whether it actually resolves each marker.
     results = content[RESULTS.search(content).start():]
 
     if not _jev.enabled():
-        print(f"Spike gate passed: {len(markers)} marker(s), Spike Results present "
-              "(no semantic check — TYPESAFE_API_KEY unset).")
-        sys.exit(0)
+        ok(f"Spike gate passed: {len(markers)} marker(s), Spike Results present "
+           "(no semantic check — TYPESAFE_API_KEY unset).")
 
     questions = {
         f"m{i}": {
@@ -114,36 +105,36 @@ def main():
     )
 
     if answers is None:
-        print(f"Spike gate passed: {len(markers)} marker(s), Spike Results present "
-              "(semantic check unavailable).")
-        sys.exit(0)
+        ok(f"Spike gate passed: {len(markers)} marker(s), Spike Results present "
+           "(semantic check unavailable).")
 
-    blocking, uncertain = [], []
+    blocking, uncertain, decisions = [], [], []
     for i, line in enumerate(markers[:10]):
         p = _jev.noul(answers, f"m{i}", default=1.0)   # absent answer != unresolved
         if p < UNRESOLVED:
             blocking.append((p, line))
+            decisions.append((f"m{i}", "unresolved", p))
         elif p < UNCERTAIN:
             uncertain.append((p, line))
+            decisions.append((f"m{i}", "uncertain", p))
+        else:
+            decisions.append((f"m{i}", "resolved", p))
+    _jev.log_decisions("spike-gate", decisions)
 
     if blocking:
-        print(f"SPIKE GATE: {len(blocking)} spike marker(s) not resolved by "
-              f"the Spike Results section in {research}.")
-        for p, line in blocking:
-            print(f"  [{p:.2f}] {line[:120]}")
-        print("  Append an outcome (finding + Go/No-Go) for each, then plan.")
-        print("  A 'No-Go' or 'this turned out not to matter' IS a valid outcome.")
-        sys.exit(2)
+        lines = "\n".join(f"  [{p:.2f}] {line[:120]}" for p, line in blocking)
+        block(f"SPIKE GATE: {len(blocking)} spike marker(s) not resolved by "
+              f"the Spike Results section in {research}.\n"
+              f"{lines}\n"
+              "  Append an outcome (finding + Go/No-Go) for each, then plan.\n"
+              "  A 'No-Go' or 'this turned out not to matter' IS a valid outcome.")
 
     if uncertain:
-        print("Spike gate passed with warnings — these markers read as "
-              "partially resolved:")
-        for p, line in uncertain:
-            print(f"  [{p:.2f}] {line[:120]}")
-        sys.exit(0)
+        lines = "\n".join(f"  [{p:.2f}] {line[:120]}" for p, line in uncertain)
+        ok("Spike gate passed with warnings — these markers read as "
+           f"partially resolved:\n{lines}")
 
-    print(f"Spike gate passed: {len(markers)} marker(s), all resolved.")
-    sys.exit(0)
+    ok(f"Spike gate passed: {len(markers)} marker(s), all resolved.")
 
 
 if __name__ == "__main__":

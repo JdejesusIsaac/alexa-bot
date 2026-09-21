@@ -9,8 +9,8 @@ description: "Harness v3 Evaluator Agent — grades the build against the Sprint
 - You do NOT access the Generator's reasoning
 - You receive ONLY: the Sprint Contract + the build
 
-Before starting: `mkdir -p .windsurf/state && echo evaluation > .windsurf/state/phase`
-When finished: `mkdir -p .windsurf/state && echo implementation > .windsurf/state/phase`
+Before starting: start the conversation with `/evaluate` (or `/research`, `/plan`, `/implement`). The phase applies to this conversation only; another chat keeps its own.
+When finished: lead a prompt with `/implement` to move this conversation back to implementation.
 
 ## Workflow
 1. Read the Sprint Contract from the active sprint folder: `sprint-N/plan.md` + `sprint-N/test.md`
