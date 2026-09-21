@@ -65,6 +65,9 @@ describe('T-17: migrations run clean from empty', () => {
         'audit_log',
         'column_mappings',
         'derivation_rules',
+        'pickup_requests',
+        'pickup_request_events',
+        'tenant_settings',
       ];
       for (const table of rlsTables) {
         const res = await client.query(

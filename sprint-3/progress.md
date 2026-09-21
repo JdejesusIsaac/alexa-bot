@@ -4,15 +4,15 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅ (T-50…T-52, T-72 passing; full suite 229/229). **All remaining tasks are gated on policy decisions:** P3 blocks PL-202 (and everything downstream), P2 blocks PL-204, and PL-209 additionally needs the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅ (T-50…T-52, T-72, T-53…T-57 passing; full suite 250/250). **P3 resolved as a product default (Session 3)** — PL-203, PL-205, PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** **No unblocked implementation tasks remain — the critical path is human.** (1) **P3 (`reason_detail` clearance + retention) is the keystone:** it gates PL-202, and every remaining task depends on PL-202. Get it answered with leadership and network ops; until then PL-203…PL-211 and PL-213 cannot start. (2) **P2 (escalation ladder)** gates PL-204 — same conversation, principal and VPs; bring the research.md §Spike Results proposal, not the question. (3) **Start P1 today** — one week, three numbers, manual tally: early pickups per day, how many were called in that morning, minutes from Slack post to leader response. (4) **Open Q6 now, not at Sprint 5 planning** — real parents, two languages, weeks of elapsed time against an hour of work. (5) PL-209 needs the **Aircall capability probe** before building: credentials + observation of what the API actually exposes (the PL-101 lesson — never documentation).
+**Next action:** (1) **PL-203 — approver routing resolver**, the next task in plan order and unblocked by PL-202. Its AC is T-58 (resolution deterministic, most-specific-wins, total) and T-59 (a tenant without a `default` routing rule fails at seed time, not at 1:50 pm). Then PL-205 → PL-206 → PL-208 → PL-210 → PL-211 in plan order. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
 
-**Blocked on:** P2 blocks PL-204 (escalation ladder). P3 blocks PL-202 and PL-210 (`reason_detail` clearance and retention). PL-209 blocked pending the Aircall capability probe.
+**Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
 **Do not start PL-204 before P2 lands.** We can propose a ladder; we must not pick one. A system that releases a scholar on our invented default is a wrong answer about a child with our name on it.
 
@@ -63,7 +63,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | ID     | Task                                    | Status | Notes                                                                                   |
 | ------ | --------------------------------------- | ------ | --------------------------------------------------------------------------------------- |
 | PL-201 | Roster grain: `service_date` + `student_id` | ✅     | T-50…T-52 passing (tests/roster-grain.test.ts); full suite 228/228 incl. carried T-01…T-49 |
-| PL-202 | `pickup_requests` schema + state machine | ⬜     | **Blocked on P3** (clearance decision before the first row is written)                  |
+| PL-202 | `pickup_requests` schema + state machine | ✅     | T-53…T-57 passing. P3 enforced at the chokepoint: `reason_detail` purged at terminal states, per-tenant retention (`tenant_settings`), nightly sweep |
 | PL-203 | Approver routing resolver               | ⬜     | The tribal-knowledge artifact (F-15). Cheapest high-value item in the sprint            |
 | PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
 | PL-205 | `staff_identities` + Slack actor mapping | ⬜     | Without it, E5 degrades silently at the one point a human decided                       |
@@ -71,7 +71,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
 | PL-208 | MCP tools: request lifecycle            | ⬜     | Three tools, disjoint descriptions, minimum field sets                                  |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
-| PL-210 | Disclosure extension                    | ⬜     | **Blocked on P3.** Also demotes `reason_code` per the Sprint 2 review finding           |
+| PL-210 | Disclosure extension                    | ⬜     | **Unblocked by the P3 decision (Session 3).** Also demotes `reason_code` per the Sprint 2 review finding |
 | PL-211 | Time-to-decision instrumentation        | ⬜     | New SLO. The 500 ms budget does not govern this surface — say so in the runbook          |
 | PL-212 | JWKS warm path + session-store decision | ✅     | T-72 passing. Warm path was already built in Sprint 2 — T-72 is the missing proof. AD-52 records the externalization trigger |
 | PL-213 | Campus pilot                            | ⬜     | One week, one campus, coordinator + two approvers                                       |
@@ -90,7 +90,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | ---------------------------- | ------- | ------- |
 | T-01…T-49 (carried)          | 49      | 49      |
 | T-50…T-52 roster grain       | 3       | 3       |
-| T-53…T-57 request lifecycle  | 0       | 0       |
+| T-53…T-57 request lifecycle  | 5       | 5       |
 | T-58…T-59 routing            | 0       | 0       |
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 0     | 0       |
@@ -197,6 +197,28 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 
 **Next action:** None unblocked for the Generator. P3 → PL-202 → the rest, in plan order. See Current state above.
 
+### Session 3 — P3 resolved; PL-202 `pickup_requests` + state machine (2026-09-21)
+
+**Worked on:** PL-202, unblocked by the P3 decision — recorded as a product default per AD-28's fallback and AD-43. The Generator had been blocking on a question its own artifacts had already answered: "default if unanswered: `never` for detail, no Slack category. Ship narrower, widen on a written decision."
+
+**Done:**
+
+- **Migration `0005_pickup_requests.sql`** — `pickup_requests`, `pickup_request_events` (append-only, `unique (request_id, escalation_level)`), `tenant_settings` (per-tenant `reason_detail` retention, default 0 = the P3 default). RLS enabled AND forced, same grants posture: events INSERT+SELECT only, UPDATE/DELETE revoked at the grant level (T-56, the `audit_log` posture); requests are never deletable. **Composite tenant FKs:** a request's scholar and contact must belong to the request's own tenant — a plain FK on `student_id` would reference across tenants; the composite keys make the write side of leak vector 21 structurally impossible, asserted by test.
+- **The transition function** (`src/repositories/pickup-requests.ts`) — the single writer of `state` (T-55, guarded structurally). `draft → routed → approved | flagged | denied → released → completed`, plus `expired` off `routed` (AD-26: expiry never approves; E3: `release` is reachable only from `approved`). `FOR UPDATE` serializes concurrent transitions on one request; re-applying the settled outcome is an idempotent no-op returning the current state (T-54, the Slack at-least-once case); illegal attempts are typed refusals naming the attempted transition, with a `refused` event row (T-53). Ladder events carry their level — the unique constraint is the double-fire backstop in the database (T-57); decision and refusal events carry NULL (distinct under Postgres uniqueness, so they never collide with the ladder).
+- **P3 enforcement at the chokepoint** — terminal transitions (`completed`, `denied`, `expired`) purge `reason_detail` when the tenant retention is 0; `tenant_settings.reason_detail_retention_days` widens retention as a config row, not a migration; `purgeStaleReasonDetail` is the nightly sweep (service date past, plus the retention window). `reason_category` is a five-value product-default enum (`appointment`, `family`, `illness`, `administrative`, `other`) — widened by written decision, never silently.
+- **Tests** (`tests/pickup-request-lifecycle.test.ts`, 21): T-53 (three illegal transitions, each named, state unchanged, event recorded; cross-tenant id is `not_found`), T-54 (idempotent re-approval, no second decision row; conflicting re-decision after denial refused), T-55 (grep: `update pickup_requests` exists only in the transition module's two writers — `applyTransition`, which writes state and is not exported, and the retention sweep, which sets `reason_detail` only), T-56 (grant-level append-only), T-57 (double-fire rejected as 23505; distinct rungs coexist; escalate advances level + clock), P3 (terminal purge on all three terminal states, widened retention retains, sweep purges past-date only), isolation (cross-tenant invisibility; composite FK rejects a cross-tenant scholar).
+
+**Full run 2026-09-21: 25 files, 250/250 passing** (229 + 21), local Postgres, synthetic fixtures. Standing gate green: T-01…T-05, T-33…T-35, T-52.
+
+**Surprises:**
+
+- **The sweep compares against the real clock, and the first fixture was fictional-future.** A "past" service date of 2030 purges nothing when today is 2026 — the test failed its own pass condition on the first run. Test dates that mean "past" must be past the real clock; dates that mean "deterministic" may be fictional.
+- **The plan's `unique (request_id, escalation_level)` cannot be a plain constraint if decisions are events** — `routed@0` and `approved@0` would collide. Resolution: the constraint IS plain, exactly as written; ladder events carry levels, everything else NULL (Postgres treats NULLs as distinct). The plan's intent — one notification per rung — holds literally, and refusal events never collide.
+- **`assigned_approver_id` ships without a foreign key, on purpose** — `staff_identities` is PL-205's table with its own schema decisions. A uuid now so the reference never changes shape when the FK lands.
+- **T-53 and T-57 could have conflicted** — both write event rows, and a refusal event at the request's current level would collide with that level's ladder event. NULL-level refusal events resolve it without weakening either guarantee.
+
+**Next action:** PL-203 (approver routing resolver) — unblocked; AC is T-58 and T-59. Then PL-205 → PL-206 → PL-208 → PL-210 → PL-211 in plan order. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
 ---
 
 ## Decisions made mid-sprint
@@ -218,6 +240,7 @@ _Anything settled here must also land in `research/research.md` §4 **the same s
 | S0      | Rubric reweighted: Disclosure 40%, Auth 25%     | First sprint storing sensitive content on purpose and moving a child                   | ⬜ pending     |
 | S0      | **AD-42 audit at the rejecting boundary**       | Sprint 2 evaluation F-1: pre-dispatch rejections reached no handler, so no row was written | ✅ §4 rev 2 |
 | S2      | **AD-52 session store in-memory until a second web instance** | PL-212: sessions hold transports only (AD-18), so the single-instance assumption holds; second instance or autoscale forces the move — to Postgres, not a broker | ✅ §4 rev 5 |
+| S3      | **P3 resolved — product default** (AD-28 fallback + AD-43) | Clearance `never`, no Slack category; purge at terminal state + nightly end-of-service-date sweep; per-tenant retention setting. Widening either value requires a written decision | ✅ §Spike Results |
 
 **⬜ pending is a debt, not a status.** Sprint 2 kept this table reconciled every session; do the same.
 

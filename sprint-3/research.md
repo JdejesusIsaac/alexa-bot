@@ -235,11 +235,19 @@ Carried from Sprint 2. Additions:
 **Method:** not an engineering spike — a decision meeting with the principal and VPs. Bring the proposal, not the question: assigned VP → 10 min → principal → 10 min → expire. Record what they choose and what they reject.
 **A "no timeout, wait indefinitely" answer is a valid result** and reshapes PL-204 into a queue with no clock — which should be escalated, because it reproduces today's failure with better logging.
 
-### P3 — `reason_detail` clearance and retention `SPIKE` (open)
+### P3 — `reason_detail` clearance and retention `RESOLVED` (product default, 2026-09-21)
 
-**Question:** Q12. **Blocks:** PL-202, PL-210.
+**Question:** Q12. **Unblocks:** PL-202, PL-210.
 **Method:** decision with leadership and network ops. Frame per 3k — the reason already travels over Slack informally; this bounds it. Three sub-answers needed: clearance tier, retention period, and whether `reason_category` may appear in a Slack payload at all.
 **Default if unanswered:** `never` for detail, no Slack category. Ship narrower, widen on a written decision.
+
+**Decision (product default, per AD-28 and the research.md P3 fallback):**
+
+- **Clearance:** `reason_detail` is `never`. No tool response, notification, log, or trace returns it. No reason in Slack payloads, category included — this narrows AD-28's notification clause ("notifications carry `reason_category`") until widened by a written decision.
+- **Retention:** purge `reason_detail` on terminal state (`completed`, `denied`, `expired`); a nightly sweep purges any remaining at end of `service_date`. `reason_category`, the dated request row, and `pickup_request_events` persist — the leader's pattern judgment rests on those (AD-31), and none of it needs the free text.
+- **Retention period is a per-tenant setting** (`tenant_settings`), defaulting to the above. Widening either value requires a written decision recorded in research.md.
+
+Per AD-43 this default is AllowMe's to set: the campus's leadership decides later whether to widen it, and widening is then a config change, not a migration. **Implementation:** the purge is enforced in the pickup-request transition function (PL-202) — at the chokepoint, not filtered downstream (the Rule 8 discipline). `reason_category` ships with a five-value product-default enum (`appointment`, `family`, `illness`, `administrative`, `other`), widened the same way.
 
 ### PL-209 — Aircall capability probe `SPIKE` (open)
 
@@ -258,3 +266,4 @@ Carried from Sprint 2. Additions:
 | 3   | 2026-09-20 | **§6 restructured: build gates / tenant preconditions / vendor disclosures (AD-43).** AD-33 amended — Alexa+ returns as a channel. Q3 closed: Alexa AI CLI, not ASK CLI. Amazon policy status observed 2026-09-20 |
 | 4   | 2026-09-20 | **AD-48: Alexa+ is the product surface.** Sprint 4 = Alexa+ staff-facing; Sprint 5 = parent tier there; Aircall demoted to a later capability. AD-34 amended. Q6 reopened from a no-caller-ID baseline |
 | 5   | 2026-09-21 | **AD-52: session-store externalization trigger recorded (PL-212).** In-memory session Map holds while there is one web instance; a second instance or autoscale moves it to Postgres. T-72 written: the first authenticated request on a fresh process is served from the startup-warmed JWKS cache — no fetch on the request path |
+| 6   | 2026-09-21 | **P3 resolved as a product default (AD-28 fallback + AD-43): clearance `never`, no Slack category, purge at terminal state + end-of-service-date sweep, per-tenant retention setting.** Unblocks PL-202 and, with it, PL-203/205/206/208/210/211. PL-204 still waits on P2 |

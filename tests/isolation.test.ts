@@ -28,6 +28,9 @@ const RLS_TABLES = [
   'audit_log',
   'column_mappings',
   'derivation_rules',
+  'pickup_requests',
+  'pickup_request_events',
+  'tenant_settings',
 ];
 
 let db: TestDb;
