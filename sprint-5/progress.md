@@ -48,6 +48,7 @@
 - **A test that cannot fail its own pass condition** (Sprint 2 F-2) — state which AC clause each test can fail on
 - **Chasing the wrong binary** — Q3 sat blocked on the ASK CLI; the tool is the Alexa AI CLI
 - **Carrying a candidate list across a channel change.** The phone-era Q6 list assumed caller ID and one listener. Neither holds on a shared device; re-derive from the channel's properties, don't port the list
+- **A harness hook that no longer matches the repo's paths fails silently and looks healthy.** Four of seven were inert for three sprints; the smoke test passed because its fixtures used the same stale paths. When a layout changes, re-run every hook against a real path from the new layout
 
 ---
 
@@ -89,6 +90,10 @@ T-01…T-83 carried. Sprint 5 adds T-84…T-95. **T-84 and T-85 need rewriting o
 - **AD-32 and AD-38 are void on this channel.** Both assumed caller ID. Recorded rather than deleted, so the reasoning survives if the phone capability returns.
 
 **Next action:** open Q6 now.
+
+### Session 0.5 — Harness repair + Jev semantic hooks (2026-09-20 review)
+
+**Decisions made mid-sprint:** the 2026-09-20 harness review found 4 of 7 hooks inert — they matched the canonical v3 layout while all work lives in `sprint-N/`. Repaired on `harness/repair-and-jev`: sprint-aware artifact resolution in `_common.py`, `verify-hooks.sh` now covers 7/7 with sprint-path fixtures, `.windsurf/state/` tracked via README so the documented phase command works on fresh clones, and phase-rule `globs:` extended to `sprint-*/` artifacts. Added the optional Jev layer (`_jev.py`, stdlib-only, fails closed→open: every vendor error returns None = "no opinion", never "no"): `spike-gate` asks per-marker resolution nouls (block <0.35, warn <0.65), `failure-check` semantically matches diffs against this list (advisory, exit 0 always). `TYPESAFE_API_KEY` unset = exactly the old deterministic behaviour; hooks read it from env with a `.env` fallback. First live run correctly blocked `sprint-3/plan.md` — its Spike Results section is all methods, no outcomes.
 
 ---
 

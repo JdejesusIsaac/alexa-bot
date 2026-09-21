@@ -10,7 +10,8 @@ fixtures/real/
 !.env.example
 
 # --- Harness ---
-.windsurf/state/
+.windsurf/state/*
+!.windsurf/state/README.md
 
 # --- Build / tooling ---
 *.code-workspace

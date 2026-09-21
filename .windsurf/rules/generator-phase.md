@@ -1,6 +1,6 @@
 ---
 trigger: glob
-globs: implementation/**, src/**, lib/**, scripts/**
+globs: implementation/**, src/**, lib/**, scripts/**, sprint-*/progress.md
 ---
 # Generator Phase Constraints
 
