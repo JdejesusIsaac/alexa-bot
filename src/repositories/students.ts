@@ -24,6 +24,20 @@ export interface Student {
 }
 
 /**
+ * Find a student by id within the current tenant context. Used by the
+ * pickup decision path to record which scholar's request was acted on.
+ */
+export async function findStudentById(
+  client: PoolClient,
+  studentId: string,
+): Promise<Student | null> {
+  const res = await client.query<Student>(`select * from students where id = $1`, [
+    studentId,
+  ]);
+  return res.rows.length > 0 ? res.rows[0]! : null;
+}
+
+/**
  * Resolve a roster row's `student_ref` against `students`, inserting the
  * student when absent. The unique (tenant_id, student_ref) constraint
  * makes a re-sync an update, not a duplicate (T-51).

@@ -9,6 +9,7 @@ import {
   RoutingNotTotalError,
   type RoutingResolution,
 } from '../src/repositories/approver-routing.js';
+import { insertStaffIdentity } from '../src/repositories/staff-identities.js';
 import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 
 /**
@@ -75,6 +76,44 @@ beforeAll(async () => {
   } finally {
     owner.release();
   }
+
+  // Approvers are registered staff (PL-205): the composite FK on
+  // approver_id refuses to name an identity that does not exist, so the
+  // identities are inserted before the rules that reference them.
+  await withTenant(db.appPool, TENANT_A, async (client) => {
+    await insertStaffIdentity(client, {
+      id: APPROVER_SEC,
+      slackUserId: 'USYNTH_SEC',
+      subject: 'lead-sec@synthetic.test',
+      role: 'staff',
+    });
+    await insertStaffIdentity(client, {
+      id: APPROVER_GRADE,
+      slackUserId: 'USYNTH_GRADE',
+      subject: 'lead-grade@synthetic.test',
+      role: 'staff',
+    });
+    await insertStaffIdentity(client, {
+      id: APPROVER_DEFAULT,
+      slackUserId: 'USYNTH_DEFAULT',
+      subject: 'lead-default@synthetic.test',
+      role: 'staff',
+    });
+  });
+  await withTenant(db.appPool, TENANT_B, async (client) => {
+    await insertStaffIdentity(client, {
+      id: B_APPROVER_SEC,
+      slackUserId: 'USYNTH_B_SEC',
+      subject: 'lead-b-sec@synthetic.test',
+      role: 'staff',
+    });
+    await insertStaffIdentity(client, {
+      id: B_APPROVER_DEFAULT,
+      slackUserId: 'USYNTH_B_DEFAULT',
+      subject: 'lead-b-default@synthetic.test',
+      role: 'staff',
+    });
+  });
 
   // Tenant A: the full tri-rule tenant — section, grade, and default all
   // in play (T-58's setup).

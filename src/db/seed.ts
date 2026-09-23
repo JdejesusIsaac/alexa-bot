@@ -85,6 +85,23 @@ export async function seed(options?: SeedOptions): Promise<SyncResult[]> {
         );
       }
 
+      // 3a. Insert staff identities (PL-205) — BEFORE the routing rules
+      // that reference them: the composite FK checks every new row, and
+      // a configured approver must be registered staff (AD-29).
+      for (const identity of fixture.staffIdentities) {
+        await client.query(
+          `insert into staff_identities (id, tenant_id, slack_user_id, subject, role)
+           values ($1, $2, $3, $4, $5)`,
+          [
+            identity.id,
+            fixture.tenantId,
+            identity.slackUserId,
+            identity.subject,
+            identity.role,
+          ],
+        );
+      }
+
       // 3b. Insert approver routing rules (PL-203 — the tribal-knowledge
       // artifact, F-15), then validate totality LOUDLY: a tenant with no
       // default rule fails here, at seed time — not when the first

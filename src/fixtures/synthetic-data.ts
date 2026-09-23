@@ -426,6 +426,46 @@ export const TENANT_A_APPROVER_DEFAULT = '6f6f6f6f-6f6f-6f6f-6f6f-6f6f6f6f6f6f';
 export const TENANT_B_APPROVER_SECTION = '7a7a7a7a-7a7a-7a7a-7a7a-7a7a7a7a7a7a';
 export const TENANT_B_APPROVER_DEFAULT = '8b8b8b8b-8b8b-8b8b-8b8b-8b8b8b8b8b8b';
 
+// The approvers above are registered staff (PL-205): a configured approver
+// without a staff identity could never be notified over Slack, and the
+// composite FK now refuses to name one. Ids match the routing seeds.
+export interface StaffIdentitySeed {
+  id: string;
+  slackUserId: string;
+  subject: string;
+  role: 'staff' | 'admin';
+}
+
+export const TENANT_A_STAFF_IDENTITIES: readonly StaffIdentitySeed[] = [
+  {
+    id: TENANT_A_APPROVER_SECTION,
+    slackUserId: 'USYNTH_A_SECTION',
+    subject: 'lead-alpha-section@synthetic.test',
+    role: 'staff',
+  },
+  {
+    id: TENANT_A_APPROVER_DEFAULT,
+    slackUserId: 'USYNTH_A_DEFAULT',
+    subject: 'lead-alpha-default@synthetic.test',
+    role: 'staff',
+  },
+];
+
+export const TENANT_B_STAFF_IDENTITIES: readonly StaffIdentitySeed[] = [
+  {
+    id: TENANT_B_APPROVER_SECTION,
+    slackUserId: 'USYNTH_B_SECTION',
+    subject: 'lead-bravo-section@synthetic.test',
+    role: 'staff',
+  },
+  {
+    id: TENANT_B_APPROVER_DEFAULT,
+    slackUserId: 'USYNTH_B_DEFAULT',
+    subject: 'lead-bravo-default@synthetic.test',
+    role: 'staff',
+  },
+];
+
 export interface RoutingSeed {
   scopeType: 'section' | 'grade' | 'default';
   scopeValue?: string;
@@ -450,6 +490,7 @@ export interface TenantFixture {
   mappings: readonly MappingSeed[];
   sheet: SheetRow;
   derivationRules: readonly DerivationRuleSeed[];
+  staffIdentities: readonly StaffIdentitySeed[];
   routing: readonly RoutingSeed[];
 }
 
@@ -460,6 +501,7 @@ export const FIXTURES: readonly TenantFixture[] = [
     mappings: TENANT_A_MAPPINGS,
     sheet: TENANT_A_SHEET,
     derivationRules: TENANT_A_DERIVATION_RULES,
+    staffIdentities: TENANT_A_STAFF_IDENTITIES,
     routing: TENANT_A_ROUTING,
   },
   {
@@ -468,6 +510,7 @@ export const FIXTURES: readonly TenantFixture[] = [
     mappings: TENANT_B_MAPPINGS,
     sheet: TENANT_B_SHEET,
     derivationRules: TENANT_B_DERIVATION_RULES,
+    staffIdentities: TENANT_B_STAFF_IDENTITIES,
     routing: TENANT_B_ROUTING,
   },
 ];

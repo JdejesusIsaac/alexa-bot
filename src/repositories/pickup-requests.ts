@@ -87,6 +87,8 @@ export interface PickupRequestEvent {
     | 'expired'
     | 'refused';
   actor: string;
+  /** How this transition arrived: Slack interaction, in-app tool, or the worker. */
+  channel: 'slack' | 'app' | 'worker';
   created_at: Date;
 }
 
@@ -145,6 +147,8 @@ export interface TransitionRequest {
   readonly escalateAt?: Date;
   /** Ladder reassignment (PL-204). Unchanged when omitted. */
   readonly assignedApproverId?: string;
+  /** How the transition arrived — recorded on the event row (T-67). */
+  readonly channel?: 'slack' | 'app' | 'worker';
 }
 
 export type TransitionResult =
@@ -222,14 +226,21 @@ export async function insertPickupRequestEvent(
     escalationLevel: number | null;
     eventType: PickupRequestEvent['event_type'];
     actor: string;
+    channel?: 'slack' | 'app' | 'worker';
   },
 ): Promise<PickupRequestEvent> {
   const res = await client.query<PickupRequestEvent>(
     `insert into pickup_request_events
-       (tenant_id, request_id, escalation_level, event_type, actor)
-     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4)
+       (tenant_id, request_id, escalation_level, event_type, actor, channel)
+     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5)
      returning *`,
-    [params.requestId, params.escalationLevel, params.eventType, params.actor],
+    [
+      params.requestId,
+      params.escalationLevel,
+      params.eventType,
+      params.actor,
+      params.channel ?? 'app',
+    ],
   );
   return res.rows[0]!;
 }
@@ -272,6 +283,10 @@ export async function transitionPickupRequest(
   request: TransitionRequest,
 ): Promise<TransitionResult> {
   const def = TRANSITIONS[request.action];
+  // Normalized once: the event row's channel, defaulting to the app path
+  // (exactOptionalPropertyTypes forbids passing an explicit undefined
+  // into the optional insert parameter).
+  const channel = request.channel ?? 'app';
 
   // 1. Lock the row. Concurrent transitions on one request serialize
   //    here; the second caller then observes the first's outcome.
@@ -297,6 +312,7 @@ export async function transitionPickupRequest(
       escalationLevel: null,
       eventType: 'refused',
       actor: request.actor,
+      channel,
     });
     return {
       ok: false,
@@ -345,6 +361,7 @@ export async function transitionPickupRequest(
     escalationLevel: isLadderEvent ? updated.escalation_level : null,
     eventType: ACTION_EVENT_TYPES[request.action],
     actor: request.actor,
+    channel,
   });
 
   return { ok: true, request: updated, idempotent: false };

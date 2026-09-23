@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59 passing; full suite 262/262). **P3 resolved as a product default (Session 3)** — PL-205, PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67 passing; full suite 268/268). **P3 resolved as a product default (Session 3)** — PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-205 — `staff_identities` + Slack actor mapping**, next in plan order [PL-202 ✓]. Its AC is T-64 (an unmapped Slack actor cannot decide — typed refusal, audited, no state change) and T-67 (every decision audited with a resolved subject). Then PL-206 → PL-208 → PL-210 → PL-211. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
+**Next action:** (1) **PL-206 — Slack notification surface (outbound)**, next in plan order [PL-203 ✓, PL-205 ✓]. Its AC is T-68 — the sentinel adversarial pass: `reason_detail` appears nowhere outside Postgres and the audited in-app read, across the approver DM, the channel thread, every log line, and every error path including a forced failure. Per the P3 decision the payload carries **no reason at all** — scholar name, pickup time, link; not even the category. Then PL-208 → PL-210 → PL-211. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -45,7 +45,6 @@ Graded separately from the rubric (AD-14).
 
 - Evaluator mischaracterized T-18's assertion (≤500 ms) when the code asserts ≤150 ms — verify against source, never against a report's characterization
 - Marking a task ✅ when code is written rather than when the AC is met (PL-005) — use 🔵 for code-complete-but-unverified
-- Zod `.nullable()` without `.default(null)` still requires the key present
 - RLS `WITH CHECK` rejects INSERT omitting `tenant_id`
 - `exactOptionalPropertyTypes` rejects the JWT object form — positional overload required
 - Auth0 silently drops custom claims whose namespace is not a valid URL (`https://parent-line/` — bare host, no TLD): no error anywhere; cost ~2h across 6 probe runs chasing deployment instead of naming
@@ -53,6 +52,7 @@ Graded separately from the rubric (AD-14).
 - **Verifying an external integration by documentation rather than observation** (PL-101: two "REJECTED" results were dashboard misconfiguration, not vendor behavior). Applies directly to PL-209 — probe Aircall, don't read about it
 - **Auditing inside the handler when the rejection happens before the handler** (Sprint 2 F-1): `tools/call` rejections raised by the SDK pre-dispatch wrote no `mcp_audit` row, violating E5 while 49 tests stayed green. Two sibling tools also disagreed on the identical invalid-args path — the pattern was enforced by memory, not structure. → AD-42
 - **A test that cannot fail its own pass condition** (Sprint 2 F-2): T-41 asserted `auth_ms`/`tool_ms` were non-null instead of running 200 calls and recording p95. It occupied a slot on a green scoreboard while measuring nothing. This is PL-005's failure moved from the task board to the test suite, and 🔵 does not catch it — **when writing a test, state which AC clause it can fail on**
+- **Piping a gate through `tail` reports the pipe's exit code, not the command's.** `npm run typecheck | tail -3 && npm run lint` ran lint over a failing typecheck — the `exactOptionalPropertyTypes` error sat inside a "green" verify step until an unpiped run caught it. Run gates unfiltered, or check the command's own status
 
 _At the 10-line cap, prune the oldest code-specific entries first; they remain in earlier sprints' progress.md. The two process lessons at the top stay._
 
@@ -66,7 +66,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-202 | `pickup_requests` schema + state machine | ✅     | T-53…T-57 passing. P3 enforced at the chokepoint: `reason_detail` purged at terminal states, per-tenant retention (`tenant_settings`), nightly sweep |
 | PL-203 | Approver routing resolver               | ✅     | T-58, T-59 passing. Most-specific-wins (section > grade > default), total, deterministic; totality fails loudly at seed (assert wired into `npm run seed`) |
 | PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
-| PL-205 | `staff_identities` + Slack actor mapping | ⬜     | Without it, E5 degrades silently at the one point a human decided                       |
+| PL-205 | `staff_identities` + Slack actor mapping | ✅     | T-64, T-67 passing. Unmapped actor → typed refusal, audited, no state change; decisions recorded under the subject, never the slack id. T-65/T-66 wait on PL-207's endpoint |
 | PL-206 | Slack notification surface (outbound)   | ⬜     | Category + link only. Never `reason_detail`                                             |
 | PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
 | PL-208 | MCP tools: request lifecycle            | ⬜     | Three tools, disjoint descriptions, minimum field sets                                  |
@@ -93,7 +93,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-53…T-57 request lifecycle  | 5       | 5       |
 | T-58…T-59 routing            | 2       | 2       |
 | T-60…T-63 escalation         | 0       | 0       |
-| T-64…T-67 actor + inbound auth | 0     | 0       |
+| T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
 | T-68…T-70 disclosure         | 0       | 0       |
 | T-71…T-73 intake + ops       | 1       | 1       |
 
@@ -239,6 +239,29 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **A mid-flight branch switch by the user stashed this WIP** — the recovery path (commit their harness work, switch, pop, restore untracked files) is recorded here because the stash's message is the only durable trace of the interruption.
 
 **Next action:** PL-205 (`staff_identities` + Slack actor mapping) — AC T-64, T-67. Then PL-206 → PL-208 → PL-210 → PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 5 — PL-205 staff_identities + Slack actor mapping (2026-09-21)
+
+**Worked on:** PL-205 — the Slack actor resolves to the audit subject (AD-29), the gate that keeps E5 honest at the one point a human decided.
+
+**Done:**
+
+- **Migration `0007_staff_identities.sql`** — the mapping table: `(tenant_id, slack_user_id, subject, role)`, unique per (tenant, slack id), RLS enabled and forced, full CRUD grants. **The deferred FKs landed as promised in PL-202/203**: `approver_routing.approver_id` and `pickup_requests.assigned_approver_id` now composite-FK to `staff_identities (tenant_id, id)` — a configured approver must be registered staff, because the fast decision path (PL-207) arrives over Slack and an unmapped approver could never be notified. `NOT VALID` on purpose: pre-registry seeded rows exist in dev databases; new writes are enforced, the seed inserts identities before routing, so fresh seeds are fully consistent — VALIDATE after any old dev DB is re-seeded.
+- **`pickup_request_events.channel`** (`slack` | `app` | `worker`, default `app`) — T-67's "the channel it arrived through" lives on the decision row; the transition function records it.
+- **Repository** (`src/repositories/staff-identities.ts`) — `insertStaffIdentity` (optional id so approver config can reference a known identity) and `findStaffIdentityBySlackUserId` (RLS-scoped: a slack id mapped only in another tenant is simply not found). Plus `findStudentById` on the students repo, so refusal rows can name whose request was blocked.
+- **The decision service** (`src/services/pickup-decision.ts`) — `decidePickupRequestAsSlackActor`: unmapped actor → typed refusal `unmapped_slack_actor`, **audited**, no state change (T-64); mapped → the transition runs under the **subject**, never the slack id, with channel `slack`. Every call writes exactly one `audit_log` row (the T-16 discipline): refusal rows carry the raw slack id — "who tried and failed to act" is exactly what staff need to close a mapping gap — decision rows carry the subject.
+- **Seed + fixtures**: staff identities for the four fixture approvers, inserted before the routing rules; the routing test file registers its five approvers the same way.
+- **Tests** (`tests/slack-actor.test.ts`, 6): T-64 (unmapped → refusal with state unchanged and an audit row; a foreign-tenant mapping is equally unmapped — identical refusal; invisible request → `not_found`) and T-67 (request row, event row, and audit row all carry the subject + channel; zero events attributable to a slack id; slack vs app channels distinguishable; the at-least-once replay is idempotent — one decision event, `success:idempotent` audit).
+
+**Full run 2026-09-21: 27 files, 268/268 passing** (262 + 6), local Postgres, synthetic fixtures. Standing gate green.
+
+**Surprises:**
+
+- **A pipe hid a type error inside a green verify step.** `npm run typecheck | tail -3 && npm run lint` tested `tail`'s exit code, not `tsc`'s — the `exactOptionalPropertyTypes` failure (passing `channel: request.channel` into an optional param) sailed through and only surfaced when a later run wasn't piped. Fixed by normalizing `request.channel ?? 'app'` once, and logged as a Failed Approach — the third `exactOptionalPropertyTypes` bite in this project's history.
+- **The refusal audit row deliberately carries the raw slack id** while decision rows never do — the asymmetry is the point: T-67 forbids slack-id *decisions*, not slack-id *evidence*. A refusal that cannot say who was refused closes no mapping gaps.
+- **One human, two Slack accounts is legal** (several slack ids → one subject); the reverse is not (unique per tenant + id). Everything audits as the human.
+
+**Next action:** PL-206 (Slack notification surface, outbound) — AC T-68, the sentinel adversarial pass; the P3 decision means the payload carries no reason at all. Then PL-208 → PL-210 → PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
 
 ---
 
