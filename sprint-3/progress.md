@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67 passing; full suite 268/268). **P3 resolved as a product default (Session 3)** — PL-206, PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68 passing; full suite 275/275). **P3 resolved as a product default (Session 3)** — PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-206 — Slack notification surface (outbound)**, next in plan order [PL-203 ✓, PL-205 ✓]. Its AC is T-68 — the sentinel adversarial pass: `reason_detail` appears nowhere outside Postgres and the audited in-app read, across the approver DM, the channel thread, every log line, and every error path including a forced failure. Per the P3 decision the payload carries **no reason at all** — scholar name, pickup time, link; not even the category. Then PL-208 → PL-210 → PL-211. (2) **P2** still gates PL-204 — unless the ladder-as-required-config option is taken (worker refuses to start without a written ladder; T-63 asserts config against the recorded policy), which makes it buildable now against a fixture ladder and un-runnable for real until P2 lands. (3) **P1 measurement week** — start today; three numbers, manual tally. (4) **Q6** — open now, not at Sprint 5 planning. (5) **PL-209** needs the Aircall probe (credentials + observation, never documentation).
+**Next action:** (1) **PL-208 — MCP tools: request lifecycle** [PL-202 ✓, PL-210 — see note], next in plan order. Three staff tools with disjoint descriptions and minimum field sets: `create_pickup_request` (coordinator-entered intake), `list_pending_approvals` (an approver's queue for today), `decide_pickup_request` (approve/flag/deny with a note). Its AC is T-70 (minimum field sets on success **and** refusal; schema registry fingerprint extended). Note: PL-208 is sequenced after PL-210 in the plan, but PL-210's disclosure extension needs P3 only (resolved) — order them as the plan allows: PL-210 first (FIELD_CLEARANCE + TOOL_MINIMUM_FIELDS for the new tables/tools) unblocks T-69/T-70 cleanly. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -67,7 +67,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-203 | Approver routing resolver               | ✅     | T-58, T-59 passing. Most-specific-wins (section > grade > default), total, deterministic; totality fails loudly at seed (assert wired into `npm run seed`) |
 | PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
 | PL-205 | `staff_identities` + Slack actor mapping | ✅     | T-64, T-67 passing. Unmapped actor → typed refusal, audited, no state change; decisions recorded under the subject, never the slack id. T-65/T-66 wait on PL-207's endpoint |
-| PL-206 | Slack notification surface (outbound)   | ⬜     | Category + link only. Never `reason_detail`                                             |
+| PL-206 | Slack notification surface (outbound)   | ✅     | T-68 passing (sentinel adversarial, 7 tests). Per P3: no reason at all — name, time, link; the payload builder never sees the request row |
 | PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
 | PL-208 | MCP tools: request lifecycle            | ⬜     | Three tools, disjoint descriptions, minimum field sets                                  |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
@@ -94,7 +94,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-58…T-59 routing            | 2       | 2       |
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
-| T-68…T-70 disclosure         | 0       | 0       |
+| T-68…T-70 disclosure         | 1 (T-68) | 1      |
 | T-71…T-73 intake + ops       | 1       | 1       |
 
 **Gate this sprint:** T-01…T-05, T-33…T-35, **plus T-52, T-60, T-68.** Run before every commit.
@@ -262,6 +262,27 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **One human, two Slack accounts is legal** (several slack ids → one subject); the reverse is not (unique per tenant + id). Everything audits as the human.
 
 **Next action:** PL-206 (Slack notification surface, outbound) — AC T-68, the sentinel adversarial pass; the P3 decision means the payload carries no reason at all. Then PL-208 → PL-210 → PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 6 — PL-206 Slack notification surface, outbound (2026-09-21)
+
+**Worked on:** PL-206 — the outbound half of the Slack surface, graded by T-68 (GATE): `reason_detail` never leaves Postgres.
+
+**Done:**
+
+- **Slack client surface** (`src/slack/`): `SlackClient` (post a message, get a typed result — no throws in the contract), `WebApiSlackClient` (`chat.postMessage` over plain HTTPS — no SDK, per the no-new-infrastructure posture; token at construction, never logged), and `CaptureSlackClient` (records every message it **would** have put on the wire, including on failure — what a failing send would have sent is part of the leak surface; can fail or throw on demand).
+- **The notification service** (`src/services/pickup-notification.ts`): DM to the named approver (their `staff_identities` slack id — AD-27) + low-detail thread in the visibility channel. **Payload discipline is structural:** `buildPickupNotificationPayloads(studentName, pickupAt, link)` takes only the three fields it may carry and never receives the request row, so `reason_detail` cannot reach a message even by mistake. Per the P3 decision the payload carries **no reason at all** — not the category, not the detail. Notifications are a side effect, never a gate: typed refusals (`not_found`, `no_assigned_approver`, `send_failed`), logs carry metadata only.
+- **A throwing client is contained** (`postSafely`): the exception's message is deliberately neither propagated nor logged — it is the one string in this path we do not control, and an exception message that embeds payload content must not become the leak (T-68's forced-exception leg).
+- **T-68** (`tests/slack-notification.test.ts`, 7): the DM and thread carry name/time/link and no sentinel **and no reason category** (the P3 fail condition, not just AD-28's); log lines carry metadata only — no sentinel, no message text, not even the link; a failing client's attempted messages and logs stay clean; a throwing client is contained with `client_exception` and no exception text; unassigned → typed refusal with nothing sent; invisible and cross-tenant requests → `not_found` with nothing sent.
+
+**Full run 2026-09-21: 28 files, 275/275 passing** (268 + 7), local Postgres, synthetic fixtures. Standing gate green.
+
+**Surprises:**
+
+- **The composite FK caught my own test setup.** The cross-tenant test routed tenant B's request to tenant A's approver identity — the `pickup_requests_approver_fk` from PL-205 rejected the route before the test could assert anything. The protection working as designed is the best kind of test failure: fix the fixture, not the guard.
+- **Wiring is deliberately absent.** Nothing calls the notifier yet — the worker (PL-204) and the route flow (PL-208) are its callers. Adding config keys now would be dead config; they land with the first wiring.
+- **T-68's tool-response legs (success and refusal) are not yet testable** — the tools are PL-208. The projection chokepoint already default-denies `reason_detail` (no FIELD_CLEARANCE entry), and PL-210 formalizes the clearance map for the Sprint 3 fields.
+
+**Next action:** PL-210 (disclosure extension — FIELD_CLEARANCE + TOOL_MINIMUM_FIELDS for the Sprint 3 fields, `reason_code` demoted per the Sprint 2 review), then PL-208 (the three request-lifecycle tools, T-70), then PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
 
 ---
 

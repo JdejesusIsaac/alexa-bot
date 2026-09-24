@@ -67,3 +67,18 @@ export async function findStaffIdentityBySlackUserId(
   );
   return res.rows.length > 0 ? res.rows[0]! : null;
 }
+
+/**
+ * Find a staff identity by id within the current tenant context — the
+ * assigned approver of a pickup request (PL-206 notifications).
+ */
+export async function findStaffIdentityById(
+  client: PoolClient,
+  identityId: string,
+): Promise<StaffIdentity | null> {
+  const res = await client.query<StaffIdentity>(
+    `select * from staff_identities where id = $1`,
+    [identityId],
+  );
+  return res.rows.length > 0 ? res.rows[0]! : null;
+}
