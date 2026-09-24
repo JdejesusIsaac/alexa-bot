@@ -31,7 +31,12 @@ export const FIELD_CLEARANCE: Readonly<Record<string, Clearance>> = {
   student_name: 'staff',
   section: 'staff',
   attendance_status: 'staff',
-  reason_code: 'staff',
+  // Sprint 2 review finding, closed by PL-210: the roster's reason code
+  // is reason-adjacent free text — "the reason goes to a private channel"
+  // (README). It was kept out of responses only by the minimum-set gate,
+  // with clearance alone permitting it. Demoted to never; a future tool
+  // that needs it requires a written decision, like every other widening.
+  reason_code: 'never',
   hold_type: 'staff',
   hold_source: 'staff',
   release_time: 'staff',
@@ -45,6 +50,29 @@ export const FIELD_CLEARANCE: Readonly<Record<string, Clearance>> = {
   id: 'never',
   student_id: 'never',
   service_date: 'never',
+
+  // ── Sprint 3: pickup_requests (PL-210) ───────────────────────────────
+  // The P3 decision: `reason_detail` is clearance `never` — written at
+  // intake, read only in-app under a tenant context with an audit entry,
+  // purged at terminal states. The category is the disclosable form.
+  request_id: 'staff',
+  state: 'staff',
+  pickup_at: 'staff',
+  reason_category: 'staff',
+  reason_detail: 'never',
+  escalation_level: 'staff',
+  decided_at: 'staff',
+  decided_by: 'staff',
+  // Clock and lifecycle timestamps: internal until a tool earns them.
+  escalate_at: 'never',
+  released_at: 'never',
+  completed_at: 'never',
+  expired_at: 'never',
+  created_at: 'never',
+  // Internal references — uuids that resolve server-side only.
+  assigned_approver_id: 'never',
+  requested_by_contact_id: 'never',
+  intake_channel: 'never',
 };
 
 /**
@@ -80,6 +108,21 @@ export const TOOL_MINIMUM_FIELDS: Readonly<Record<string, readonly string[]>> = 
     'is_fresh',
     'quarantined',
   ],
+  // ── Sprint 3: the request-lifecycle tools (PL-210 declares; PL-208
+  // implements). Minimum sets exist before the tools so T-69/T-70 can
+  // grade default-deny against the tables that carry the sensitive
+  // content, not just the ones the policy was written for.
+  create_pickup_request: ['request_id', 'state'],
+  // The approver's queue: who, when, why (category — the disclosable
+  // form), and how far up the ladder it has climbed.
+  list_pending_approvals: [
+    'request_id',
+    'student_name',
+    'pickup_at',
+    'reason_category',
+    'escalation_level',
+  ],
+  decide_pickup_request: ['request_id', 'state', 'decided_at'],
 };
 
 function isClearedForRole(clearance: Clearance, role: Role): boolean {

@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68 passing; full suite 275/275). **P3 resolved as a product default (Session 3)** — PL-208, PL-210, and PL-211 are unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅, PL-210 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69 passing; full suite 280/280). **P3 resolved as a product default (Session 3)** — PL-208 and PL-211 remain unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-208 — MCP tools: request lifecycle** [PL-202 ✓, PL-210 — see note], next in plan order. Three staff tools with disjoint descriptions and minimum field sets: `create_pickup_request` (coordinator-entered intake), `list_pending_approvals` (an approver's queue for today), `decide_pickup_request` (approve/flag/deny with a note). Its AC is T-70 (minimum field sets on success **and** refusal; schema registry fingerprint extended). Note: PL-208 is sequenced after PL-210 in the plan, but PL-210's disclosure extension needs P3 only (resolved) — order them as the plan allows: PL-210 first (FIELD_CLEARANCE + TOOL_MINIMUM_FIELDS for the new tables/tools) unblocks T-69/T-70 cleanly. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
+**Next action:** (1) **PL-208 — MCP tools: request lifecycle** [PL-202 ✓, PL-210 ✓], the last implementation task before PL-211. Three staff tools with disjoint customer-facing descriptions: `create_pickup_request` (coordinator-entered intake), `list_pending_approvals` (an approver's queue for today), `decide_pickup_request` (approve/flag/deny with a note). The disclosure ground is already laid: TOOL_MINIMUM_FIELDS and FIELD_CLEARANCE entries exist (PL-210), so each tool projects through the chokepoint and carries exactly its minimum set on success **and** refusal (T-70; the tools present the request's PK as `request_id` — `id` is never-cleared). AD-15: every declared parameter implemented or absent. Schema registry fingerprint extended + version bumped. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -71,7 +71,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
 | PL-208 | MCP tools: request lifecycle            | ⬜     | Three tools, disjoint descriptions, minimum field sets                                  |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
-| PL-210 | Disclosure extension                    | ⬜     | **Unblocked by the P3 decision (Session 3).** Also demotes `reason_code` per the Sprint 2 review finding |
+| PL-210 | Disclosure extension                    | ✅     | T-69 passing. Sprint 3 fields in FIELD_CLEARANCE (`reason_detail` never per P3); `reason_code` demoted to never (Sprint 2 review); TOOL_MINIMUM_FIELDS declared for the three PL-208 tools |
 | PL-211 | Time-to-decision instrumentation        | ⬜     | New SLO. The 500 ms budget does not govern this surface — say so in the runbook          |
 | PL-212 | JWKS warm path + session-store decision | ✅     | T-72 passing. Warm path was already built in Sprint 2 — T-72 is the missing proof. AD-52 records the externalization trigger |
 | PL-213 | Campus pilot                            | ⬜     | One week, one campus, coordinator + two approvers                                       |
@@ -94,7 +94,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-58…T-59 routing            | 2       | 2       |
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
-| T-68…T-70 disclosure         | 1 (T-68) | 1      |
+| T-68…T-70 disclosure         | 2 (T-68, T-69) | 2     |
 | T-71…T-73 intake + ops       | 1       | 1       |
 
 **Gate this sprint:** T-01…T-05, T-33…T-35, **plus T-52, T-60, T-68.** Run before every commit.
@@ -283,6 +283,26 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **T-68's tool-response legs (success and refusal) are not yet testable** — the tools are PL-208. The projection chokepoint already default-denies `reason_detail` (no FIELD_CLEARANCE entry), and PL-210 formalizes the clearance map for the Sprint 3 fields.
 
 **Next action:** PL-210 (disclosure extension — FIELD_CLEARANCE + TOOL_MINIMUM_FIELDS for the Sprint 3 fields, `reason_code` demoted per the Sprint 2 review), then PL-208 (the three request-lifecycle tools, T-70), then PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 7 — PL-210 disclosure extension (2026-09-21)
+
+**Worked on:** PL-210 — the clearance map grows to the tables that carry the sensitive content. Done ahead of PL-208 (the plan sequences 208 after 210) so the tools implement against a declared policy rather than inventing one.
+
+**Done:**
+
+- **FIELD_CLEARANCE gains the Sprint 3 fields** (pickup_requests): `reason_detail` is `never` (the P3 decision — written at intake, read only in-app under a tenant context with an audit entry, purged at terminal states); `reason_category` is `staff` (the disclosable form); the decision surface (`request_id`, `state`, `pickup_at`, `escalation_level`, `decided_at`, `decided_by`) is `staff`; the clock/lifecycle timestamps and internal references (`escalate_at`, `released_at`, `completed_at`, `expired_at`, `created_at`, `assigned_approver_id`, `requested_by_contact_id`, `intake_channel`) are `never` — internal until a tool earns them, widened by written decision.
+- **The Sprint 2 review finding is closed**: `reason_code` demoted from `staff` to `never` — it was kept out of responses only by the minimum-set gate, with clearance alone permitting it ("the reason goes to a private channel," README). No existing minimum set contains it, so the demotion breaks nothing and forecloses the future leak.
+- **TOOL_MINIMUM_FIELDS declares the three PL-208 tools before they exist**: `create_pickup_request` [`request_id`, `state`], `list_pending_approvals` [`request_id`, `student_name`, `pickup_at`, `reason_category`, `escalation_level`], `decide_pickup_request` [`request_id`, `state`, `decided_at`]. Declaring first means T-69/T-70 grade default-deny against a real policy.
+- **T-69** (`tests/disclosure-extension.test.ts`, 5): the canary leg — a brand-new column (`t69_canary`) ALTERed onto `pickup_requests` with no clearance entry anywhere rides on every `select *` row and survives **no** projection, for every tool, at every role; the new tools' projections carry exactly their declared minimum sets; `reason_detail`/`reason_code` pinned `never` in the map and absent in behavior; internal references pinned `never`.
+
+**Full run 2026-09-21: 29 files, 280/280 passing** (275 + 5), local Postgres, synthetic fixtures. Standing gate green.
+
+**Surprises:**
+
+- **The minimum-set field is `request_id`, but the row's PK is `id` — and `id` is `never`-cleared.** A generic PK is not a response field; the tools (PL-208) present it as `request_id` on the shaped row they project. The first T-69 run failed on exactly this — the test now shapes the row the way the tool layer will, and the contract is recorded for PL-208: never project the raw `id`.
+- **The demotion broke nothing** — `reason_code` appears in no minimum set, so the E2E suites never saw it. The finding was clearance *latently permitting* a field no tool currently returns; the demotion forecloses the future tool that would have leaned on it.
+
+**Next action:** PL-208 (the three request-lifecycle tools — T-70), then PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
 
 ---
 
