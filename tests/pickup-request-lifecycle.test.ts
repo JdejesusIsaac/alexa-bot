@@ -362,7 +362,10 @@ describe('PL-202 · T-55 (structural): state written only through the transition
         expect(
           purgeBody.match(/update\s+pickup_requests\s+set\s+reason_detail\s*=\s*null/i),
         ).not.toBeNull();
-        expect(purgeBody.match(/\bstate\s*=/i)).toBeNull();
+        // Nothing after the state writer SETS state — reads may filter on
+        // it (`where pr.state = 'routed'` in the queue), writes may not.
+        // The write shape is a SET clause reaching `state =`.
+        expect(purgeBody.match(/\bset\b[\s\S]{0,200}?\bstate\s*=/i)).toBeNull();
         // applyTransition is module-private — only the chokepoint can
         // reach the state writer.
         expect(
@@ -384,10 +387,11 @@ describe('PL-202 · T-55 (structural): state written only through the transition
     const exports = [...content.matchAll(/export\s+async\s+function\s+(\w+)/g)].map(
       (m) => m[1],
     );
-    // Every exported writer is intake, lookup, or the chokepoint itself.
+    // Every exported writer is intake, lookup, or the chokepoint itself;
+    // the queue listing is a read (state never written there).
     for (const name of exports) {
       expect(name).toMatch(
-        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail)$/,
+        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail|listPendingApprovalsForApprover)$/,
       );
     }
   });

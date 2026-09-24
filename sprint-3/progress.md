@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅, PL-210 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69 passing; full suite 280/280). **P3 resolved as a product default (Session 3)** — PL-208 and PL-211 remain unblocked in plan order. PL-204 still waits on P2; PL-209 on the Aircall probe.
+**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅, PL-210 ✅, PL-208 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69, T-70 passing; full suite 289/289). **P3 resolved as a product default (Session 3)** — PL-211 is the last unblocked implementation task. PL-204 still waits on P2; PL-209 on the Aircall probe; PL-213 on all.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-208 — MCP tools: request lifecycle** [PL-202 ✓, PL-210 ✓], the last implementation task before PL-211. Three staff tools with disjoint customer-facing descriptions: `create_pickup_request` (coordinator-entered intake), `list_pending_approvals` (an approver's queue for today), `decide_pickup_request` (approve/flag/deny with a note). The disclosure ground is already laid: TOOL_MINIMUM_FIELDS and FIELD_CLEARANCE entries exist (PL-210), so each tool projects through the chokepoint and carries exactly its minimum set on success **and** refusal (T-70; the tools present the request's PK as `request_id` — `id` is never-cleared). AD-15: every declared parameter implemented or absent. Schema registry fingerprint extended + version bumped. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
+**Next action:** (1) **PL-211 — time-to-decision instrumentation** [PL-202 ✓, PL-204 — note], the last unblocked implementation task. Median and p90 time-to-decision, escalation rate, expiry rate, decision mix by approver — per tenant. Its AC is T-73 (E2's number recorded with its conditions, alongside the P1 baseline). The plan's note: the Alexa 500 ms budget does not govern this surface — say so in the runbook. PL-211 nominally sequences [PL-202, PL-204] but the measurements are read-side queries over pickup_requests + events; the worker is only the thing that would IMPROVE the numbers. Build it. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally; E2 needs the baseline recorded. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -69,7 +69,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-205 | `staff_identities` + Slack actor mapping | ✅     | T-64, T-67 passing. Unmapped actor → typed refusal, audited, no state change; decisions recorded under the subject, never the slack id. T-65/T-66 wait on PL-207's endpoint |
 | PL-206 | Slack notification surface (outbound)   | ✅     | T-68 passing (sentinel adversarial, 7 tests). Per P3: no reason at all — name, time, link; the payload builder never sees the request row |
 | PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
-| PL-208 | MCP tools: request lifecycle            | ⬜     | Three tools, disjoint descriptions, minimum field sets                                  |
+| PL-208 | MCP tools: request lifecycle            | ✅     | T-70 passing (9 tests). Three tools, disjoint descriptions, exactly the minimum sets on success and refusal; registry regenerated at 2.1.0 |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
 | PL-210 | Disclosure extension                    | ✅     | T-69 passing. Sprint 3 fields in FIELD_CLEARANCE (`reason_detail` never per P3); `reason_code` demoted to never (Sprint 2 review); TOOL_MINIMUM_FIELDS declared for the three PL-208 tools |
 | PL-211 | Time-to-decision instrumentation        | ⬜     | New SLO. The 500 ms budget does not govern this surface — say so in the runbook          |
@@ -94,7 +94,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-58…T-59 routing            | 2       | 2       |
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
-| T-68…T-70 disclosure         | 2 (T-68, T-69) | 2     |
+| T-68…T-70 disclosure         | 3     | 3       |
 | T-71…T-73 intake + ops       | 1       | 1       |
 
 **Gate this sprint:** T-01…T-05, T-33…T-35, **plus T-52, T-60, T-68.** Run before every commit.
@@ -303,6 +303,28 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **The demotion broke nothing** — `reason_code` appears in no minimum set, so the E2E suites never saw it. The finding was clearance *latently permitting* a field no tool currently returns; the demotion forecloses the future tool that would have leaned on it.
 
 **Next action:** PL-208 (the three request-lifecycle tools — T-70), then PL-211. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 8 — PL-208 MCP tools: request lifecycle (2026-09-21)
+
+**Worked on:** PL-208 — the three staff tools, graded by T-70. Built against the disclosure ground PL-210 laid (minimum sets and clearances existed before the tools).
+
+**Done:**
+
+- **`create_pickup_request`** — coordinator-entered intake: scholar, pickup time, reason category, optional detail. Resolves the student by ref (unknown ref → typed refusal, nothing invented), resolves the ONE named approver (PL-203) BEFORE creating anything — no orphan drafts — then creates and routes with the clock set to the pickup time (decide before the parent arrives; until PL-204 the clock is data, the worker owns ladder semantics). `routing_not_total` refuses and degrades to a human (Rule 10). Notifications deliberately NOT wired here — no Slack credentials exist; the callers are the worker and the Slack flow.
+- **`list_pending_approvals`** — the caller's own queue (AD-27: one named approver, so the queue is theirs), resolved through `staff_identities` by audit subject: a caller with no identity in this tenant has an empty queue, which is honest, not an error. Today's service date, `routed` state, ordered by pickup time. No arguments — approver and date derived server-side.
+- **`decide_pickup_request`** — approve/flag/deny with a note. The caller's verified-token subject is `decided_by` (the app actor arrives AS the subject — AD-29's distinction from Slack actors). The note is a declared parameter that lands somewhere real (AD-15): a new `pickup_request_events.note` column (migration 0008), clearance `never` — decision-adjacent free text, same discipline as reason_detail. Idempotent replays are successes (T-54's discipline); cross-tenant and unknown ids are `not_found`, conflicting re-decisions are `illegal_transition`.
+- **Registration + versioning**: the three tools registered (six total), `TOOL_NAMES` extended, `SCHEMA_VERSION`/`SERVER_VERSION` bumped to 2.1.0 with a changelog entry, the registry fingerprint regenerated. The test helper now seeds staff identities + approver routing per tenant (identities before rules — the composite FK checks every new row).
+- **T-70** (`tests/pickup-tools.test.ts`, 9): each response carries exactly its declared minimum set on success and refusal; the intake sentinel (reason_detail) never returns in structured content or text; the DB row is routed + assigned + clocked to pickup time with the detail stored, not returned; unknown scholar creates nothing; the queue is the caller's with exactly the minimum set per row; non-approvers get an empty queue, not an error; decisions record the caller's subject with the note on the event; foreign-tenant ids are `not_found`; conflicting re-decisions refuse without overwriting; the three descriptions are disjoint (each names its own action and tells the model when to use another); the unit leg — a full row projected through every minimum set discloses no reason detail.
+
+**Full run 2026-09-21: 30 files, 289/289 passing** (280 + 9), local Postgres, synthetic fixtures. Standing gate green; registry check green at 2.1.0.
+
+**Surprises:**
+
+- **T-55's structural guard caught the queue read and had to be taught the difference between a WHERE and a SET.** `listPendingApprovalsForApprover` filters `where pr.state = 'routed'`; the guard's `\bstate\s*=` pattern flagged it. The guard now matches the write shape (`set … state =`) — reads may filter on state, writes may not — and the export allowlist gained the queue function. The guard being wrong twice in two sessions is it working: each change to that module has to argue with the test.
+- **The fourth `exactOptionalPropertyTypes` bite**, same class as the last three: `note: args.note` into an optional param. The spread pattern (`...(x !== undefined ? { x } : {})`) is now the house style for optional threading — worth remembering before the fifth.
+- **The create tool resolves the approver before creating the request.** The first design would have left orphan drafts on a routing failure; resolution is student-based (PL-203), so it can run pre-create. No draft exists that the system cannot route.
+
+**Next action:** PL-211 (time-to-decision instrumentation — T-73), the last unblocked implementation task. Then PL-213 (pilot) once PL-204/PL-209 land. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
 
 ---
 

@@ -38,6 +38,22 @@ export async function findStudentById(
 }
 
 /**
+ * Find a student by reference within the current tenant context — the
+ * pickup intake path (PL-208). A ref that exists only in another tenant
+ * is simply not found here.
+ */
+export async function findStudentByRef(
+  client: PoolClient,
+  studentRef: string,
+): Promise<Student | null> {
+  const res = await client.query<Student>(
+    `select * from students where student_ref = $1`,
+    [studentRef],
+  );
+  return res.rows.length > 0 ? res.rows[0]! : null;
+}
+
+/**
  * Resolve a roster row's `student_ref` against `students`, inserting the
  * student when absent. The unique (tenant_id, student_ref) constraint
  * makes a re-sync an update, not a duplicate (T-51).

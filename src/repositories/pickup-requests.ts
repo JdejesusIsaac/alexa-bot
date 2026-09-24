@@ -89,6 +89,8 @@ export interface PickupRequestEvent {
   actor: string;
   /** How this transition arrived: Slack interaction, in-app tool, or the worker. */
   channel: 'slack' | 'app' | 'worker';
+  /** The decider's note, when the transition carries one (PL-208). */
+  note: string | null;
   created_at: Date;
 }
 
@@ -149,6 +151,8 @@ export interface TransitionRequest {
   readonly assignedApproverId?: string;
   /** How the transition arrived — recorded on the event row (T-67). */
   readonly channel?: 'slack' | 'app' | 'worker';
+  /** The decider's note, recorded on the event row (PL-208). */
+  readonly note?: string;
 }
 
 export type TransitionResult =
@@ -227,12 +231,13 @@ export async function insertPickupRequestEvent(
     eventType: PickupRequestEvent['event_type'];
     actor: string;
     channel?: 'slack' | 'app' | 'worker';
+    note?: string;
   },
 ): Promise<PickupRequestEvent> {
   const res = await client.query<PickupRequestEvent>(
     `insert into pickup_request_events
-       (tenant_id, request_id, escalation_level, event_type, actor, channel)
-     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5)
+       (tenant_id, request_id, escalation_level, event_type, actor, channel, note)
+     values (current_setting('app.tenant_id')::uuid, $1, $2, $3, $4, $5, $6)
      returning *`,
     [
       params.requestId,
@@ -240,6 +245,7 @@ export async function insertPickupRequestEvent(
       params.eventType,
       params.actor,
       params.channel ?? 'app',
+      params.note ?? null,
     ],
   );
   return res.rows[0]!;
@@ -355,6 +361,7 @@ export async function transitionPickupRequest(
 
   // 7. Ledger the transition. Ladder events carry their level — the
   //    unique constraint rejects a double-fire here, in the database.
+  //    A decision's note rides on its event (PL-208).
   const isLadderEvent = request.action === 'route' || request.action === 'escalate';
   await insertPickupRequestEvent(client, {
     requestId: updated.id,
@@ -362,6 +369,7 @@ export async function transitionPickupRequest(
     eventType: ACTION_EVENT_TYPES[request.action],
     actor: request.actor,
     channel,
+    ...(request.note !== undefined ? { note: request.note } : {}),
   });
 
   return { ok: true, request: updated, idempotent: false };
@@ -442,4 +450,39 @@ export async function purgeStaleReasonDetail(client: PoolClient): Promise<number
     [retentionDays],
   );
   return res.rowCount ?? 0;
+}
+
+/** An approver's queue entry (PL-208): the fields the response needs. */
+export interface PendingApproval {
+  readonly id: string;
+  readonly state: PickupRequestState;
+  readonly pickup_at: Date;
+  readonly reason_category: ReasonCategory;
+  readonly escalation_level: number;
+  readonly student_name: string;
+}
+
+/**
+ * The approver's queue for a service date: requests in `routed`, assigned
+ * to the named approver (AD-27 — one named approver, so the queue is
+ * theirs), ordered by pickup time. The students join is tenant-safe by
+ * the composite FK. A read — `state` is never written here (T-55).
+ */
+export async function listPendingApprovalsForApprover(
+  client: PoolClient,
+  approverIdentityId: string,
+  serviceDate: string,
+): Promise<readonly PendingApproval[]> {
+  const res = await client.query<PendingApproval>(
+    `select pr.id, pr.state, pr.pickup_at, pr.reason_category,
+            pr.escalation_level, s.student_name
+     from pickup_requests pr
+     join students s on s.id = pr.student_id
+     where pr.state = 'routed'
+       and pr.assigned_approver_id = $1
+       and pr.service_date = $2
+     order by pr.pickup_at asc, pr.id asc`,
+    [approverIdentityId, serviceDate],
+  );
+  return res.rows;
 }

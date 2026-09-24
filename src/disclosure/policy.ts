@@ -73,6 +73,9 @@ export const FIELD_CLEARANCE: Readonly<Record<string, Clearance>> = {
   assigned_approver_id: 'never',
   requested_by_contact_id: 'never',
   intake_channel: 'never',
+  // The approver's decision note (PL-208): decision-adjacent free text,
+  // same discipline as reason_detail — in-app only, never a response field.
+  note: 'never',
 };
 
 /**

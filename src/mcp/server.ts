@@ -34,9 +34,26 @@ import {
   ROSTER_SYNC_STATUS_DESCRIPTION,
   handleRosterSyncStatus,
 } from './tools/roster-sync-status.js';
+import {
+  CREATE_PICKUP_REQUEST_NAME,
+  CREATE_PICKUP_REQUEST_DESCRIPTION,
+  CREATE_PICKUP_REQUEST_INPUT,
+  handleCreatePickupRequest,
+} from './tools/create-pickup-request.js';
+import {
+  LIST_PENDING_APPROVALS_NAME,
+  LIST_PENDING_APPROVALS_DESCRIPTION,
+  handleListPendingApprovals,
+} from './tools/list-pending-approvals.js';
+import {
+  DECIDE_PICKUP_REQUEST_NAME,
+  DECIDE_PICKUP_REQUEST_DESCRIPTION,
+  DECIDE_PICKUP_REQUEST_INPUT,
+  handleDecidePickupRequest,
+} from './tools/decide-pickup-request.js';
 
 export const SERVER_NAME = 'parent-line';
-export const SERVER_VERSION = '2.0.0';
+export const SERVER_VERSION = '2.1.0';
 
 /**
  * Registered tool names. The HTTP boundary uses this to distinguish a
@@ -47,6 +64,9 @@ export const TOOL_NAMES: ReadonlySet<string> = new Set([
   LOOKUP_SCHOLAR_STATUS_NAME,
   SEARCH_ROSTER_NAME,
   ROSTER_SYNC_STATUS_NAME,
+  CREATE_PICKUP_REQUEST_NAME,
+  LIST_PENDING_APPROVALS_NAME,
+  DECIDE_PICKUP_REQUEST_NAME,
 ]);
 
 type RawToolHandler = (rawArgs: unknown, extra: unknown) => Promise<LookupResult>;
@@ -67,9 +87,8 @@ function audited(toolName: string, handler: RawToolHandler) {
     // tools (extra); extra is whichever argument carries authInfo.
     const extra = b ?? a;
     const rawArgs = b === undefined ? undefined : a;
-    const meta = (
-      extra as { authInfo?: { extra?: Partial<RequestMeta> } } | undefined
-    )?.authInfo?.extra;
+    const meta = (extra as { authInfo?: { extra?: Partial<RequestMeta> } } | undefined)
+      ?.authInfo?.extra;
     const startedAt = performance.now();
     try {
       const result = await handler(rawArgs, extra);
@@ -116,9 +135,7 @@ export function createMcpServer(deps: ToolDeps): McpServer {
       description: SEARCH_ROSTER_DESCRIPTION,
       inputSchema: SEARCH_ROSTER_INPUT,
     },
-    audited(SEARCH_ROSTER_NAME, (args, extra) =>
-      handleSearchRoster(args, extra, deps),
-    ),
+    audited(SEARCH_ROSTER_NAME, (args, extra) => handleSearchRoster(args, extra, deps)),
   );
 
   // No input schema → the SDK passes only `extra` to the callback;
@@ -128,6 +145,36 @@ export function createMcpServer(deps: ToolDeps): McpServer {
     { description: ROSTER_SYNC_STATUS_DESCRIPTION },
     audited(ROSTER_SYNC_STATUS_NAME, (args, extra) =>
       handleRosterSyncStatus(args, extra, deps),
+    ),
+  );
+
+  server.registerTool(
+    CREATE_PICKUP_REQUEST_NAME,
+    {
+      description: CREATE_PICKUP_REQUEST_DESCRIPTION,
+      inputSchema: CREATE_PICKUP_REQUEST_INPUT,
+    },
+    audited(CREATE_PICKUP_REQUEST_NAME, (args, extra) =>
+      handleCreatePickupRequest(args, extra, deps),
+    ),
+  );
+
+  server.registerTool(
+    LIST_PENDING_APPROVALS_NAME,
+    { description: LIST_PENDING_APPROVALS_DESCRIPTION },
+    audited(LIST_PENDING_APPROVALS_NAME, (args, extra) =>
+      handleListPendingApprovals(args, extra, deps),
+    ),
+  );
+
+  server.registerTool(
+    DECIDE_PICKUP_REQUEST_NAME,
+    {
+      description: DECIDE_PICKUP_REQUEST_DESCRIPTION,
+      inputSchema: DECIDE_PICKUP_REQUEST_INPUT,
+    },
+    audited(DECIDE_PICKUP_REQUEST_NAME, (args, extra) =>
+      handleDecidePickupRequest(args, extra, deps),
     ),
   );
 

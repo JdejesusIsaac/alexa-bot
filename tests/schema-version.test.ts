@@ -67,7 +67,7 @@ beforeAll(async () => {
         | undefined
     )?.tools ?? [];
 
-  expect(tools.length).toBe(3);
+  expect(tools.length).toBe(6);
   wireTools = tools.map((t) => ({
     name: t.name,
     description: t.description ?? '',

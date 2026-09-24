@@ -1,6 +1,6 @@
 {
-  "version": "2.0.0",
-  "fingerprint": "d5351866a3f2676ac6a58a7c6442fbc7c2587a08d5097888c645badf56a65a7f",
+  "version": "2.1.0",
+  "fingerprint": "ecfeffde75600bf36763228ec4ae560d3eb63fa20dae19581392fd5971604604",
   "tools": [
     {
       "name": "lookup_scholar_status",
@@ -61,6 +61,84 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "create_pickup_request",
+      "description": "Record a new early-pickup request for one scholar — the student ID, the pickup time, and the reason category — and route it to the approver responsible for that scholar. Use this tool when a parent calls the school in the morning to schedule a pickup later today. Do not use it to look up an existing request, to review a queue of requests, or to record a decision.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "student_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pickup_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason_category": {
+            "type": "string",
+            "enum": [
+              "appointment",
+              "family",
+              "illness",
+              "administrative",
+              "other"
+            ]
+          },
+          "reason_detail": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "student_ref",
+          "pickup_at",
+          "reason_category"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "list_pending_approvals",
+      "description": "List the early-pickup requests waiting for YOUR decision today — each request routed to you as the approver, with the scholar, the pickup time, the reason category, and how far it has climbed the escalation ladder. Use this tool when an approver asks what is pending for them right now. Do not use it to create a request, to look up a scholar’s dismissal status, or to decide.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "decide_pickup_request",
+      "description": "Record a decision on an early-pickup request — approve it, flag it for a closer look, or deny it — with an optional note explaining the decision. Use this tool when an approver has reviewed a pending request and made a call. Do not use it to create requests, to list what is pending, or to look up a scholar’s dismissal status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "flag",
+              "deny"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "request_id",
+          "decision"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
       }
     }
   ]

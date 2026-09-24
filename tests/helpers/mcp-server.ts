@@ -18,6 +18,7 @@ import { createLogger, type Logger } from '../../src/logging/logger.js';
 import { createMcpApp, type McpApp } from '../../src/mcp/http.js';
 import { startLocalAs, type LocalAs } from './local-as.js';
 import { provisionTestDb, type TestDb } from './db.js';
+import { withTenant } from '../../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../../src/connector/fixture-sheet-connector.js';
 import {
@@ -27,6 +28,7 @@ import {
   TENANT_B_MAPPINGS,
   TENANT_A_DERIVATION_RULES,
   TENANT_B_DERIVATION_RULES,
+  FIXTURES,
 } from '../../src/fixtures/synthetic-data.js';
 
 export interface TestMcpServerOptions {
@@ -121,6 +123,35 @@ export async function startTestMcpServer(
     if (result.kind !== 'success') {
       throw new Error(`fixture sync failed for ${tenantId}`);
     }
+  }
+
+  // Staff identities + approver routing per tenant (PL-205/PL-203) —
+  // the request-lifecycle tools resolve approvers and queues through
+  // them. Identities are inserted before the routing rules that
+  // reference them (the composite FK checks every new row).
+  for (const fixture of FIXTURES) {
+    await withTenant(db.appPool, fixture.tenantId, async (client) => {
+      for (const identity of fixture.staffIdentities) {
+        await client.query(
+          `insert into staff_identities (id, tenant_id, slack_user_id, subject, role)
+           values ($1, $2, $3, $4, $5)`,
+          [
+            identity.id,
+            fixture.tenantId,
+            identity.slackUserId,
+            identity.subject,
+            identity.role,
+          ],
+        );
+      }
+      for (const rule of fixture.routing) {
+        await client.query(
+          `insert into approver_routing (tenant_id, scope_type, scope_value, approver_id)
+           values ($1, $2, $3, $4)`,
+          [fixture.tenantId, rule.scopeType, rule.scopeValue ?? null, rule.approverId],
+        );
+      }
+    });
   }
 
   const as = await startLocalAs();

@@ -82,3 +82,19 @@ export async function findStaffIdentityById(
   );
   return res.rows.length > 0 ? res.rows[0]! : null;
 }
+
+/**
+ * Find a staff identity by audit subject — the app-path mapping from a
+ * verified token's `sub` to the approver's registry row (PL-208). A
+ * subject with no identity is simply not an approver here.
+ */
+export async function findStaffIdentityBySubject(
+  client: PoolClient,
+  subject: string,
+): Promise<StaffIdentity | null> {
+  const res = await client.query<StaffIdentity>(
+    `select * from staff_identities where subject = $1`,
+    [subject],
+  );
+  return res.rows.length > 0 ? res.rows[0]! : null;
+}

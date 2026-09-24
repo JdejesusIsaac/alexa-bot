@@ -15,7 +15,7 @@
 
 import { createHash } from 'node:crypto';
 
-export const SCHEMA_VERSION = '2.0.0';
+export const SCHEMA_VERSION = '2.1.0';
 
 export interface SchemaChangeEntry {
   readonly version: string;
@@ -29,6 +29,12 @@ export const SCHEMA_CHANGELOG: readonly SchemaChangeEntry[] = [
     date: '2026-09-16',
     change:
       'Sprint 2 initial staff toolset: lookup_scholar_status, search_roster, roster_sync_status.',
+  },
+  {
+    version: '2.1.0',
+    date: '2026-09-21',
+    change:
+      'Sprint 3 request lifecycle: create_pickup_request, list_pending_approvals, decide_pickup_request.',
   },
 ];
 

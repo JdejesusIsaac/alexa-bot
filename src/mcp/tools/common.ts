@@ -96,4 +96,10 @@ export const REFUSAL_COPY: Readonly<Record<string, string>> = {
     'That information requires an administrative role. Please contact an administrator.',
   invalid_arguments:
     'That request is missing a required detail. Provide either a scholar ID or a scholar name.',
+  routing_not_total:
+    'This pickup request could not be routed to an approver. Please check with the front office to handle it in person.',
+  request_not_found:
+    'No pickup request matches that ID. Double-check the ID, or check the pending list for today\u2019s requests.',
+  illegal_transition:
+    'That request is not in a state where this action is possible — it may already have been decided. Check the pending list or the front office.',
 };
