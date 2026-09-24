@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress. PL-201 ✅, PL-212 ✅, PL-202 ✅, PL-203 ✅, PL-205 ✅, PL-206 ✅, PL-210 ✅, PL-208 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69, T-70 passing; full suite 289/289). **P3 resolved as a product default (Session 3)** — PL-211 is the last unblocked implementation task. PL-204 still waits on P2; PL-209 on the Aircall probe; PL-213 on all.
+**Status:** 🟡 In progress — **all unblocked implementation tasks are done.** PL-201, PL-212, PL-202, PL-203, PL-205, PL-206, PL-210, PL-208, PL-211 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69, T-70, T-73 passing; full suite 294/294). **Remaining: PL-204 waits on P2** (or the ladder-as-required-config option), **PL-209 on the Aircall probe, PL-213 (pilot) on all.** The critical path is now entirely human: P2, the probe, P1's baseline, Q6.
 
 ---
 
 ## Current state
 
-**Next action:** (1) **PL-211 — time-to-decision instrumentation** [PL-202 ✓, PL-204 — note], the last unblocked implementation task. Median and p90 time-to-decision, escalation rate, expiry rate, decision mix by approver — per tenant. Its AC is T-73 (E2's number recorded with its conditions, alongside the P1 baseline). The plan's note: the Alexa 500 ms budget does not govern this surface — say so in the runbook. PL-211 nominally sequences [PL-202, PL-204] but the measurements are read-side queries over pickup_requests + events; the worker is only the thing that would IMPROVE the numbers. Build it. (2) **P2** still gates PL-204 — the ladder-as-required-config option stands. (3) **P1 measurement week** — three numbers, manual tally; E2 needs the baseline recorded. (4) **Q6** — open now. (5) **PL-209** needs the Aircall probe.
+**Next action:** **The Generator has no unblocked tasks left — the critical path is entirely human.** (1) **P2 (escalation ladder)** — the principal and VPs; bring the research.md §Spike Results proposal, not the question. Or take the standing option: build PL-204 now with the ladder as required config (the worker refuses to start without a written ladder; T-63 asserts config against the recorded policy) — buildable against a fixture ladder, un-runnable for real until P2 lands. (2) **The Aircall probe** — credentials + observation of what the API actually exposes (the PL-101 lesson; never documentation) — unblocks PL-209. (3) **P1 measurement week** — three numbers, manual tally; E2's number is not a result without the baseline recorded alongside it. (4) **Q6** — open now, not at Sprint 5 planning. Then PL-213 (the pilot) once its inputs land.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -72,7 +72,7 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-208 | MCP tools: request lifecycle            | ✅     | T-70 passing (9 tests). Three tools, disjoint descriptions, exactly the minimum sets on success and refusal; registry regenerated at 2.1.0 |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
 | PL-210 | Disclosure extension                    | ✅     | T-69 passing. Sprint 3 fields in FIELD_CLEARANCE (`reason_detail` never per P3); `reason_code` demoted to never (Sprint 2 review); TOOL_MINIMUM_FIELDS declared for the three PL-208 tools |
-| PL-211 | Time-to-decision instrumentation        | ⬜     | New SLO. The 500 ms budget does not govern this surface — say so in the runbook          |
+| PL-211 | Time-to-decision instrumentation        | ✅     | T-73 passing (5 tests). Median/p90 (percentile_cont), rates, mix by approver; counts travel with every number. SLO note recorded in the emitter's docstring |
 | PL-212 | JWKS warm path + session-store decision | ✅     | T-72 passing. Warm path was already built in Sprint 2 — T-72 is the missing proof. AD-52 records the externalization trigger |
 | PL-213 | Campus pilot                            | ⬜     | One week, one campus, coordinator + two approvers                                       |
 
@@ -95,7 +95,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-60…T-63 escalation         | 0       | 0       |
 | T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
 | T-68…T-70 disclosure         | 3     | 3       |
-| T-71…T-73 intake + ops       | 1       | 1       |
+| T-71…T-73 intake + ops       | 2 (T-72, T-73) | 2     |
 
 **Gate this sprint:** T-01…T-05, T-33…T-35, **plus T-52, T-60, T-68.** Run before every commit.
 
@@ -325,6 +325,26 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **The create tool resolves the approver before creating the request.** The first design would have left orphan drafts on a routing failure; resolution is student-based (PL-203), so it can run pre-create. No draft exists that the system cannot route.
 
 **Next action:** PL-211 (time-to-decision instrumentation — T-73), the last unblocked implementation task. Then PL-213 (pilot) once PL-204/PL-209 land. PL-204 waits on P2 unless the ladder-as-required-config option is taken; PL-209 on the Aircall probe.
+
+### Session 9 — PL-211 time-to-decision instrumentation (2026-09-21)
+
+**Worked on:** PL-211 — the sprint's governing SLO, measured. The last unblocked implementation task: **every task the plan gates on decisions alone is now done.**
+
+**Done:**
+
+- **The metrics repository** (`src/repositories/decision-metrics.ts`): median and p90 time-to-decision (routed → decided, the glossary's definition) via PostgreSQL's `percentile_cont` ordered-set aggregates — computed in the database, not shipped for sorting. Escalation rate and expiry rate (the plan's two named signals: high escalation means routing is wrong; high expiry means the policy is wrong). Decision mix by approver — grouped by the audit subject (`decided_by`), never a raw id. **Counts travel with every number** — a measurement with no conditions is not a number (E2's discipline). Reads only; `state` is never written there (T-55 holds).
+- **The emitter** (`src/services/decision-metrics.ts`): one structured line per tenant — numbers, conditions, and nothing else (no scholar identifiers). The tenant comes from configuration in the `SyncJob` tradition — runbook/ops infra, not a request-scoped argument (Rule 7). **The SLO note lives in the emitter's docstring:** the Alexa 500 ms budget does not govern this surface; time-to-decision is in minutes. The operational runbook itself is on the deferred list (unscoped and overdue) — the docstring is its interim home, and the note says so.
+- **T-73** (`tests/decision-metrics.test.ts`, 5): constructed timings — three decided requests at 10/20/30 minutes, one escalated-then-denied, one expired — with the routed-event and decided-at timestamps backdated as exact values, so median (1200s) and p90 (1680s; `percentile_cont` interpolates — rank 1.8 of [600, 1200, 1800] is 1200 + 0.8·600) are **asserted, not approximated**. Escalation rate 0.25, expiry rate 0.25; the mix by approver exactly; an empty tenant is well-formed (null percentiles, zero rates, no mix — no divide-by-zero, no fake zeros standing in for no-data); the emitter's line carries numbers + conditions + tenant_id and no scholar data. E2's number itself lands with the pilot (PL-213) alongside the P1 baseline — the machinery that records it with its conditions is what this task owed.
+
+**Full run 2026-09-21: 31 files, 294/294 passing** (289 + 5), local Postgres, synthetic fixtures. Standing gate green.
+
+**Surprises:**
+
+- **`percentile_cont` interpolates.** With three samples, p90 is not the third value — it is 80% of the way from the second to the third. The test asserts 1680s with the arithmetic in a comment, because the next reader will assume 1800 and "fix" it.
+- **The fifth `exactOptionalPropertyTypes` bite** — same class again (`escalateAt: cond ? x : undefined`), caught by typecheck before it could hide. The spread pattern is now reflexive; the Failed Approach line already covers the class.
+- **The metrics were buildable without PL-204 despite the plan's dependency edge** — the worker is only the thing that would IMPROVE the numbers; the measurement is read-side over what exists. Pre-worker, escalation rate will read near zero and expiry rate exactly zero — which is itself a condition worth recording, not a reason to defer the instrumentation.
+
+**Next action:** None unblocked for the Generator. The critical path is entirely human: P2 (or the ladder-as-required-config option for PL-204), the Aircall probe (PL-209), P1's baseline (E2), Q6. Then PL-213.
 
 ---
 
