@@ -388,10 +388,11 @@ describe('PL-202 · T-55 (structural): state written only through the transition
       (m) => m[1],
     );
     // Every exported writer is intake, lookup, or the chokepoint itself;
-    // the queue listing is a read (state never written there).
+    // the queue listing and the due-queue claim are reads (state is
+    // written only through the chokepoint callback).
     for (const name of exports) {
       expect(name).toMatch(
-        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail|listPendingApprovalsForApprover)$/,
+        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail|listPendingApprovalsForApprover|findPickupRequestTenant|processDueEscalations)$/,
       );
     }
   });

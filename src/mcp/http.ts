@@ -60,6 +60,7 @@ import {
   type McpAuditInsert,
 } from '../repositories/mcp-audit.js';
 import { withTenant } from '../db/tenant-context.js';
+import { createSlackInteractionHandler } from '../slack/interaction-endpoint.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 const SWEEP_INTERVAL_MS = 60_000;
@@ -140,6 +141,15 @@ export function createMcpApp(options: McpAppOptions): McpApp {
     options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
   );
   sweepTimer.unref();
+
+  // PL-207 — the Slack interaction boundary. Fails closed when the
+  // signing secret is unset: an endpoint that cannot verify accepts
+  // nothing.
+  const slackInteractionHandler = createSlackInteractionHandler({
+    appPool,
+    logger,
+    signingSecret: config.slackSigningSecret,
+  });
 
   function sweepIdleSessions(): void {
     const ttlMs = config.sessionTtlMinutes * 60_000;
@@ -619,9 +629,7 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         }
       }
 
-      const initOutcome = dispatchFailed
-        ? 'rejected:initialize_failed'
-        : 'initialized';
+      const initOutcome = dispatchFailed ? 'rejected:initialize_failed' : 'initialized';
       logger.info({
         msg: 'mcp_request',
         tenant_id: identity.tenantId,
@@ -788,6 +796,14 @@ export function createMcpApp(options: McpAppOptions): McpApp {
 
     if (url.pathname === '/mcp') {
       await handleMcp(req, res, url);
+      return;
+    }
+
+    // PL-207: the Slack interaction endpoint. A sibling write boundary
+    // with its own auth scheme — signature verification, replay
+    // protection, and AD-42 boundary auditing all live in the handler.
+    if (url.pathname === '/slack/interactions') {
+      await slackInteractionHandler(req, res);
       return;
     }
 

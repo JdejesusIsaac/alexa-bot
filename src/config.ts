@@ -110,6 +110,14 @@ const schema = z.object({
   SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 
   /**
+   * Slack request-signing secret (PL-207) — shared with Slack, used to
+   * verify inbound interaction payloads. Synthetic in development.
+   * Empty by default: the endpoint fails closed until a real secret is
+   * configured — an endpoint that cannot verify accepts nothing.
+   */
+  SLACK_SIGNING_SECRET: z.string().default(''),
+
+  /**
    * Proactive JWKS refresh interval (PL-113, E3). The server refetches
    * keys on this cadence — off the request path — so a request never
    * pays the cold fetch after deploy or AS key rotation.
@@ -139,6 +147,7 @@ export type Config = Readonly<{
   allowedOrigins: readonly string[];
   sessionTtlMinutes: number;
   jwksRefreshMinutes: number;
+  slackSigningSecret: string;
 }>;
 
 export class ConfigError extends Error {
@@ -211,5 +220,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ),
     sessionTtlMinutes: raw.SESSION_TTL_MINUTES,
     jwksRefreshMinutes: raw.JWKS_REFRESH_MINUTES,
+    slackSigningSecret: raw.SLACK_SIGNING_SECRET,
   });
 }

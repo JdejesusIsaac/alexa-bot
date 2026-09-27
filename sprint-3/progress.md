@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress — **all unblocked implementation tasks are done.** PL-201, PL-212, PL-202, PL-203, PL-205, PL-206, PL-210, PL-208, PL-211 ✅ (T-50…T-52, T-72, T-53…T-57, T-58/T-59, T-64/T-67, T-68, T-69, T-70, T-73 passing; full suite 294/294). **Remaining: PL-204 waits on P2** (or the ladder-as-required-config option), **PL-209 on the Aircall probe, PL-213 (pilot) on all.** The critical path is now entirely human: P2, the probe, P1's baseline, Q6.
+**Status:** 🟡 In progress — **11 of 13 tasks ✅.** PL-201, PL-212, PL-202, PL-203, PL-205, PL-206, PL-207, PL-208, PL-210, PL-211, PL-204 ✅ (T-50…T-73 written and passing for every shipped task; full suite 312/312). **Remaining: PL-209 (Aircall probe) and PL-213 (pilot).** PL-204 is built under the ladder-as-required-config option — it cannot run a real ladder until P2 is recorded, by design.
 
 ---
 
 ## Current state
 
-**Next action:** **The Generator has no unblocked tasks left — the critical path is entirely human.** (1) **P2 (escalation ladder)** — the principal and VPs; bring the research.md §Spike Results proposal, not the question. Or take the standing option: build PL-204 now with the ladder as required config (the worker refuses to start without a written ladder; T-63 asserts config against the recorded policy) — buildable against a fixture ladder, un-runnable for real until P2 lands. (2) **The Aircall probe** — credentials + observation of what the API actually exposes (the PL-101 lesson; never documentation) — unblocks PL-209. (3) **P1 measurement week** — three numbers, manual tally; E2's number is not a result without the baseline recorded alongside it. (4) **Q6** — open now, not at Sprint 5 planning. Then PL-213 (the pilot) once its inputs land.
+**Next action:** **Two tasks remain, both gated on humans.** (1) **PL-209 — the Aircall capability probe**: credentials + observation of what the API actually exposes (the PL-101 lesson; never documentation). A "webhooks unreliable" result is valid and shrinks PL-209 to a coordinator form. (2) **PL-213 — the campus pilot**, which needs PL-209 landed and **P2 recorded** (the worker is built but structurally cannot run a real ladder until the written decision exists — point `ESCALATION_LADDER_FILE` at it when it does). (3) **P1 measurement week** — E2's baseline. (4) **Q6** — open now, not at Sprint 5 planning. (5) **The evaluator, when the sprint closes**: fresh conversation, `/evaluate`, a different model family — and everything flagged during design (the AD-42 boundary point, the T-66 timing requirement, the startup-refusal design) is generator-side context, not inherited findings. It must reach its own, or the independence is nominal.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -65,10 +65,10 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-201 | Roster grain: `service_date` + `student_id` | ✅     | T-50…T-52 passing (tests/roster-grain.test.ts); full suite 228/228 incl. carried T-01…T-49 |
 | PL-202 | `pickup_requests` schema + state machine | ✅     | T-53…T-57 passing. P3 enforced at the chokepoint: `reason_detail` purged at terminal states, per-tenant retention (`tenant_settings`), nightly sweep |
 | PL-203 | Approver routing resolver               | ✅     | T-58, T-59 passing. Most-specific-wins (section > grade > default), total, deterministic; totality fails loudly at seed (assert wired into `npm run seed`) |
-| PL-204 | Escalation worker                       | ⬜     | **Blocked on P2.** `skip locked`, no broker                                             |
+| PL-204 | Escalation worker                       | ✅     | T-60…T-63 passing (11 tests). Built under the ladder-as-required-config option: no default, refuses to start without a written ladder (naming the file), fixture ladder is obviously fake (1/2-min FIXTURE_VP rungs). **Cannot run a real ladder until P2 lands — by design** |
 | PL-205 | `staff_identities` + Slack actor mapping | ✅     | T-64, T-67 passing. Unmapped actor → typed refusal, audited, no state change; decisions recorded under the subject, never the slack id. T-65/T-66 wait on PL-207's endpoint |
 | PL-206 | Slack notification surface (outbound)   | ✅     | T-68 passing (sentinel adversarial, 7 tests). Per P3: no reason at all — name, time, link; the payload builder never sees the request row |
-| PL-207 | Slack interaction endpoint (inbound)    | ⬜     | Approve only. Second auth scheme on a write path — Sprint 2's OAuth scrutiny applies    |
+| PL-207 | Slack interaction endpoint (inbound)    | ✅     | T-65, T-66 passing (7 tests). Real verification path (synthetic secret, never logged), replay cache, AD-42 boundary auditing, cross-tenant indistinguishable in message/code/timing (200×2) |
 | PL-208 | MCP tools: request lifecycle            | ✅     | T-70 passing (9 tests). Three tools, disjoint descriptions, exactly the minimum sets on success and refusal; registry regenerated at 2.1.0 |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
 | PL-210 | Disclosure extension                    | ✅     | T-69 passing. Sprint 3 fields in FIELD_CLEARANCE (`reason_detail` never per P3); `reason_code` demoted to never (Sprint 2 review); TOOL_MINIMUM_FIELDS declared for the three PL-208 tools |
@@ -92,8 +92,8 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-50…T-52 roster grain       | 3       | 3       |
 | T-53…T-57 request lifecycle  | 5       | 5       |
 | T-58…T-59 routing            | 2       | 2       |
-| T-60…T-63 escalation         | 0       | 0       |
-| T-64…T-67 actor + inbound auth | 2 (T-64, T-67) | 2     |
+| T-60…T-63 escalation         | 4       | 4       |
+| T-64…T-67 actor + inbound auth | 4     | 4       |
 | T-68…T-70 disclosure         | 3     | 3       |
 | T-71…T-73 intake + ops       | 2 (T-72, T-73) | 2     |
 
@@ -345,6 +345,32 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 - **The metrics were buildable without PL-204 despite the plan's dependency edge** — the worker is only the thing that would IMPROVE the numbers; the measurement is read-side over what exists. Pre-worker, escalation rate will read near zero and expiry rate exactly zero — which is itself a condition worth recording, not a reason to defer the instrumentation.
 
 **Next action:** None unblocked for the Generator. The critical path is entirely human: P2 (or the ladder-as-required-config option for PL-204), the Aircall probe (PL-209), P1's baseline (E2), Q6. Then PL-213.
+
+### Session 10 — PL-207 the Slack endpoint; PL-204 the escalation worker (2026-09-21)
+
+**Worked on:** the two remaining gated tasks, commissioned together with three hold-fixed constraints (no signature material in diagnostics; AD-42 boundary auditing asserted as rows, not log lines; T-66 timing matched to the 200×2 method) and the ladder-as-required-config option for PL-204 with two guardrails (startup refusal, not per-request; an obviously-fake fixture shape).
+
+**Done — PL-207 (T-65, T-66):**
+
+- **Real verification path, synthetic secret** (`src/slack/verify-signature.ts`): the Slack scheme — `v0:{ts}:{body}`, HMAC-SHA256, hex, timing-safe compare, freshness window. The module never logs; no caller logs; the secret or a computed signature appears in **no captured log line** — asserted by test, the auth equivalent of Rule 8.
+- **The boundary** (`src/slack/interaction-endpoint.ts`): signature → freshness → replay (a bounded digest cache; within-window replays rejected distinctly, at-least-once beyond it is the decision path's idempotency) → parse (Slack's form-encoded `payload`, block_actions, approve-only) → silent tenant resolution → the decision. **Auditing lives entirely at the boundary** — unsigned, stale, replayed, malformed, and unsupported-action rejections all write `mcp_audit` rows queried by `request_id` (NULL-tenant, the AD-21 pattern). The success audit initially failed silently into the catch — a float into an int column — caught by the test querying the row rather than trusting the response, which is exactly why T-65 demands rows.
+- **T-66**: the tenant resolves through a narrow read-only SECURITY DEFINER function (`find_pickup_request_tenant`, migration 0009) that returns tenant_id or NULL and nothing else; a cross-tenant id, a nonexistent id, and an unmapped actor in the request's tenant all produce the **byte-identical** response, with timing distributions over 200×2 indistinguishable (T-42's method and tolerance). The audit rows distinguish internally — staff-side diagnostics; the wire stays uniform.
+
+**Done — PL-204 (T-60…T-63), built under the option:**
+
+- **The ladder is required config with no default** (`src/sync/escalation-ladder.ts`): `loadEscalationLadder` fails loudly at boot, naming the file, on missing/unparseable/invalid/non-contiguous config; `loadEscalationLadderFromEnv` names the variable when unset. **The refusal is at startup** — the worker's constructor only accepts a loaded ladder, so it cannot boot-and-decline. The fixture (`escalation-ladder.FIXTURE.json`) is **obviously fake**: a note in the file itself, 1- and 2-minute rungs, approvers named `FIXTURE_VP@fixture.test`. A campus's real ladder is P2's to write; until then the only runnable config is unmistakably a test.
+- **The worker** (`src/sync/escalation-worker.ts`): the due queue is claimed `FOR UPDATE SKIP LOCKED` in one transaction with a SAVEPOINT per row (the transaction mechanics live in the repository — Rule 11 caught my first draft and was right); expiry terminates to `expired`, never approves (AD-26); skipped and failed rows write `mcp_audit` rows by request id (AD-42 — the poll loop is the boundary). `npm run worker` boots it; `WORKER_TENANTS` from configuration.
+- **T-60 (GATE)**: the full ladder terminates in `expired` with the reason detail purged and no decided_by; a forced mid-ladder error (a pre-inserted blocking event hitting the unique constraint) rolls back to its savepoint, is audited, and never approves — and clears to a clean resume when the config error is fixed; a kill between rungs resumes at exactly the correct level. **T-61**: two workers racing the same due row — one escalates, one never sees it, one event per rung; the tenant-B skip case (no rung identity) is audited. **T-62**: restart resumes once, at the correct level. **T-63**: the fixture ladder asserted exactly (drift fails the test); research.md's P2 asserted still open — the only runnable ladder is the fixture, and when P2 lands the assertion flips to the written decision; boot refusals name the file and the variable.
+
+**Full run 2026-09-21: 33 files, 312/312 passing** (294 + 7 + 11), local Postgres, synthetic fixtures. Standing gate green — **T-60 is now written and passing; hard-fail condition 1 is closed.**
+
+**Surprises:**
+
+- **The stuck row sings.** The forced-error test's row stays due and is re-claimed by every later tick in the file — eight identical, safe, audited failures in the logs. That is the design working (a config gap retries safely forever rather than deciding or disappearing); the test now ends by clearing the blocker and asserting the clean resume.
+- **ESLint's Rule 11 was right about the worker.** The transaction mechanics (BEGIN/SAVEPOINT/the claim SELECT) went into `processDueEscalations` in the repository — the worker holds ladder policy, the repository owns concurrency. T-55's allowlist grew accordingly, and the guard's write-shape regex still holds.
+- **The success-path audit failed silently on a float.** `toolMs: 5.46…` into an int column, caught only because the test queries the mcp_audit row instead of trusting the 200. The rounding now lives in one place in the boundary's audit helper.
+
+**Next action:** PL-209 (the Aircall probe) and PL-213 (the pilot) — both human-gated. P2 recorded is what turns the worker's fixture into a real ladder. Then the evaluator: fresh conversation, `/evaluate`, a different model family; the design flags are context, not findings.
 
 ---
 

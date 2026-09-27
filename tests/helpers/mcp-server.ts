@@ -31,6 +31,14 @@ import {
   FIXTURES,
 } from '../../src/fixtures/synthetic-data.js';
 
+/**
+ * Synthetic Slack signing secret shared between the test server and the
+ * test signer (PL-207). The secret is fake by design; the verification
+ * path is the real one. It must never appear in a log line — the tests
+ * assert exactly that.
+ */
+export const SYNTHETIC_SLACK_SIGNING_SECRET = 'synthetic-slack-signing-secret-test-only';
+
 export interface TestMcpServerOptions {
   readonly rosterFreshnessMinutes?: number;
   readonly allowedOrigins?: readonly string[];
@@ -44,6 +52,8 @@ export interface TestMcpServerOptions {
   readonly jwksRefreshIntervalMs?: number;
   /** Prefetch JWKS at app construction (default true). */
   readonly warmJwksOnStart?: boolean;
+  /** Slack signing secret for the interaction endpoint (PL-207). */
+  readonly slackSigningSecret?: string;
 }
 
 export interface TestMcpServer {
@@ -186,6 +196,7 @@ export async function startTestMcpServer(
     ALLOWED_ORIGINS: (options.allowedOrigins ?? []).join(','),
     ROSTER_FRESHNESS_MINUTES: String(options.rosterFreshnessMinutes ?? 45),
     SESSION_TTL_MINUTES: String(options.sessionTtlMinutes ?? 60),
+    SLACK_SIGNING_SECRET: options.slackSigningSecret ?? SYNTHETIC_SLACK_SIGNING_SECRET,
   });
 
   const app = createMcpApp({

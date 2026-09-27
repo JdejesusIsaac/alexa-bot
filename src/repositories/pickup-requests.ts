@@ -1,4 +1,4 @@
-import { type PoolClient } from 'pg';
+import { type Pool, type PoolClient } from 'pg';
 import '../db/pg-types.js';
 
 /**
@@ -214,6 +214,32 @@ export async function findPickupRequestById(
     [requestId],
   );
   return res.rows.length > 0 ? res.rows[0]! : null;
+}
+
+/**
+ * Resolve which tenant a request id belongs to, with no tenant context
+ * (PL-207). The Slack endpoint verifies a Slack signature, not a
+ * tenant token — the tenant must be derived from the request itself.
+ *
+ * Backed by a read-only SECURITY DEFINER function that returns
+ * tenant_id or NULL and nothing else. The result is never disclosed:
+ * the endpoint answers not-found identically whether the id resolves
+ * to another tenant or to nothing (T-66).
+ */
+export async function findPickupRequestTenant(
+  pool: Pool,
+  requestId: string,
+): Promise<string | null> {
+  const client = await pool.connect();
+  try {
+    const res = await client.query<{ tenant_id: string | null }>(
+      `select find_pickup_request_tenant($1) as tenant_id`,
+      [requestId],
+    );
+    return res.rows[0]?.tenant_id ?? null;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -485,4 +511,86 @@ export async function listPendingApprovalsForApprover(
     [approverIdentityId, serviceDate],
   );
   return res.rows;
+}
+
+/** A due escalation row, as claimed by the worker (PL-204). */
+export interface DueEscalationRow {
+  readonly id: string;
+  readonly escalation_level: number;
+}
+
+export interface DueEscalationStats {
+  readonly claimed: number;
+  readonly escalated: number;
+  readonly expired: number;
+  readonly skipped: number;
+  readonly failed: number;
+}
+
+/**
+ * The escalation worker's due queue and transaction mechanics (PL-204).
+ *
+ * Claims due rows with `FOR UPDATE SKIP LOCKED` inside one transaction,
+ * with a SAVEPOINT per row, and processes each through the caller's
+ * callback — the worker owns ladder policy; this owns concurrency:
+ * two workers racing the same due row means one escalates and the other
+ * never sees it (T-61), and a row that throws mid-batch rolls back to
+ * its savepoint without sinking the others. `state` is written only by
+ * `transitionPickupRequest` through the callback (T-55) — this is the
+ * queue, not a state writer.
+ *
+ * `onRowError` runs after the savepoint rollback, inside the still-open
+ * transaction: the worker uses it to write the AD-42 failure audit. It
+ * must not throw (the worker's audit catches its own errors).
+ */
+export async function processDueEscalations(
+  client: PoolClient,
+  batchSize: number,
+  processRow: (
+    client: PoolClient,
+    row: DueEscalationRow,
+  ) => Promise<'escalated' | 'expired' | 'skipped'>,
+  onRowError: (client: PoolClient, row: DueEscalationRow, err: unknown) => Promise<void>,
+): Promise<DueEscalationStats> {
+  const stats = {
+    claimed: 0,
+    escalated: 0,
+    expired: 0,
+    skipped: 0,
+    failed: 0,
+  };
+
+  await client.query('begin');
+  try {
+    const due = await client.query<DueEscalationRow>(
+      `select id, escalation_level from pickup_requests
+       where state = 'routed' and escalate_at < now()
+       order by escalate_at asc
+       limit $1
+       for update skip locked`,
+      [batchSize],
+    );
+    stats.claimed = due.rows.length;
+
+    for (const row of due.rows) {
+      await client.query('savepoint escalation_row');
+      try {
+        const outcome = await processRow(client, row);
+        if (outcome === 'escalated') stats.escalated += 1;
+        else if (outcome === 'expired') stats.expired += 1;
+        else stats.skipped += 1;
+        await client.query('release savepoint escalation_row');
+      } catch (err) {
+        await client.query('rollback to savepoint escalation_row');
+        stats.failed += 1;
+        await onRowError(client, row, err);
+      }
+    }
+    await client.query('commit');
+  } catch (err) {
+    await client.query('rollback');
+    throw err;
+  }
+
+  return stats;
 }

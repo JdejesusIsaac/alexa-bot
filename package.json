@@ -2,7 +2,7 @@
   "name": "parent-line",
   "version": "0.1.0",
   "private": true,
-  "description": "Parent Line — deterministic core. Tenant-isolated scholar status for a K-12 charter network.",
+  "description": "Parent Line \u2014 deterministic core. Tenant-isolated scholar status for a K-12 charter network.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -20,7 +20,8 @@
     "seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "serve": "tsx --env-file-if-exists=.env src/main.ts",
     "soak:day": "tsx --env-file-if-exists=.env src/soak/soak-day.ts",
-    "verify": "npm run typecheck && npm run lint && npm run test"
+    "verify": "npm run typecheck && npm run lint && npm run test",
+    "worker": "tsx --env-file-if-exists=.env src/sync/escalation-worker.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
