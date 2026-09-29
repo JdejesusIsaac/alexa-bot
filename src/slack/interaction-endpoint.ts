@@ -3,8 +3,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { type Pool } from 'pg';
-import { withTenant } from '../db/tenant-context.js';
-import { findPickupRequestTenant } from '../repositories/pickup-requests.js';
+import { withTenant, withTenantTransaction } from '../db/tenant-context.js';
+import {
+  findPickupRequestById,
+  pickupRequestBelongsToTenant,
+} from '../repositories/pickup-requests.js';
+import { findStaffIdentityBySlackUserId } from '../repositories/staff-identities.js';
 import {
   insertTenantMcpAuditEntry,
   insertUnauthenticatedMcpAuditEntry,
@@ -97,6 +101,12 @@ export interface SlackInteractionDeps {
   readonly logger: Logger;
   /** Shared with Slack; synthetic in development, never logged. */
   readonly signingSecret: string;
+  /**
+   * Every configured tenant (SLACK_TENANT_IDS). The endpoint probes
+   * ALL of them for every request — constant work is what makes a
+   * cross-tenant id indistinguishable from a nonexistent one (T-66).
+   */
+  readonly tenantIds: readonly string[];
   readonly replayWindowSeconds?: number;
 }
 
@@ -318,86 +328,161 @@ export function createSlackInteractionHandler(deps: SlackInteractionDeps) {
       return;
     }
 
-    // 4. Tenant — resolved silently; the response never discloses
-    //    whether the id resolved to another tenant or to nothing
-    //    (T-66). A non-uuid value is treated identically.
+    // 4. Tenant — EVERY configured tenant is probed via the membership
+    //    function, unconditionally (PL-257). The probe count is the
+    //    same for an existent, cross-tenant, nonexistent, or malformed
+    //    id, because early-exit is the timing side channel: a found id
+    //    used to return after one query while a missing one returned
+    //    after a cheap lookup. The response never discloses which
+    //    tenant — or whether any — matched (T-66).
     const pickupRequestId = action.value;
-    const tenantId = UUID_PATTERN.test(pickupRequestId)
-      ? await findPickupRequestTenant(deps.appPool, pickupRequestId)
-      : null;
+    // PL-258: an error thrown in the probe/decision section is an
+    // audited `error:slack_internal` plus a generic 500 — never the
+    // not-found shape (a 500 that looks like not-found teaches callers
+    // to retry an id into a distinguishable fast path), never the
+    // error's content (error text is not wire data).
+    try {
+      const probeId = UUID_PATTERN.test(pickupRequestId)
+        ? pickupRequestId
+        : '00000000-0000-0000-0000-000000000000';
+      let tenantId: string | null = null;
+      for (const t of deps.tenantIds) {
+        const belongs = await pickupRequestBelongsToTenant(
+          deps.appPool,
+          probeId,
+          t,
+        );
+        if (belongs && tenantId === null) tenantId = t;
+      }
 
-    if (tenantId === null) {
-      await audit(requestId, 'slack_not_found', {
-        tenantId: null,
-        actor: 'slack',
-        authMs,
-        startedAt,
-      });
-      // Byte-identical to every other not-found shape below.
-      json(res, 200, { ok: false, error: 'request_not_found', request_id: requestId });
-      return;
-    }
+      if (tenantId === null) {
+        // The decoy (PL-257): a no-match id still runs the real path's
+        // work shape under the first configured tenant — tenant
+        // context, the request lookup, the actor lookup, and the
+        // boundary audit — so existent and nonexistent ids share a
+        // timing distribution, not just a wire response.
+        const decoyTenant = deps.tenantIds[0] ?? null;
+        if (decoyTenant !== null) {
+          await withTenant(deps.appPool, decoyTenant, async (client) => {
+            await findPickupRequestById(client, probeId);
+            await findStaffIdentityBySlackUserId(
+              client,
+              interaction.user.id,
+            );
+          });
+        }
+        await audit(requestId, 'slack_not_found', {
+          tenantId: decoyTenant,
+          actor: 'slack',
+          authMs,
+          startedAt,
+        });
+        // Byte-identical to every other not-found shape below.
+        json(res, 200, { ok: false, error: 'request_not_found', request_id: requestId });
+        return;
+      }
 
-    // 5. The decision — under the request's tenant, through the actor
-    //    mapping (AD-29), with the boundary auditing the outcome.
-    const result = await withTenant(deps.appPool, tenantId, (client) =>
-      decidePickupRequestAsSlackActor(client, {
-        requestId: pickupRequestId,
-        action: 'approve',
-        slackUserId: interaction.user.id,
-      }),
-    );
-    const toolMs = performance.now() - startedAt - authMs;
+      // 5. The decision — under the request's tenant, through the actor
+      //    mapping (AD-29), with the boundary auditing the outcome. One
+      //    transaction for the whole read-check-update (PL-275): the row
+      //    lock holds across it, so a concurrent reassignment cannot
+      //    land between the check and the UPDATE, and the service's
+      //    audit_log rows commit atomically with the decision they
+      //    describe.
+      const result = await withTenantTransaction(deps.appPool, tenantId, (client) =>
+        decidePickupRequestAsSlackActor(client, {
+          requestId: pickupRequestId,
+          action: 'approve',
+          slackUserId: interaction.user.id,
+        }),
+      );
+      const toolMs = performance.now() - startedAt - authMs;
 
-    if (result.ok) {
-      replayCache.add(digest, nowMs);
-      await audit(requestId, result.idempotent ? 'success:idempotent' : 'success', {
+      if (result.ok) {
+        replayCache.add(digest, nowMs);
+        await audit(requestId, result.idempotent ? 'success:idempotent' : 'success', {
+          tenantId,
+          actor: 'slack',
+          authMs,
+          startedAt,
+          toolMs,
+        });
+        deps.logger.info({
+          msg: 'slack_interaction',
+          tenant_id: tenantId,
+          request_id: requestId,
+          outcome: result.idempotent ? 'success:idempotent' : 'success',
+          total_ms: Math.round(performance.now() - startedAt),
+        });
+        json(res, 200, { ok: true, request_id: requestId });
+        return;
+      }
+
+      if (result.code === 'not_found' || result.code === 'unmapped_slack_actor') {
+        // T-66: identical wire response whether the request is in
+        // another tenant, nonexistent, or the actor is unmapped in the
+        // request's tenant. The audit row distinguishes — staff-side.
+        await audit(
+          requestId,
+          result.code === 'unmapped_slack_actor'
+            ? 'slack_unmapped_actor'
+            : 'slack_not_found',
+          { tenantId, actor: 'slack', authMs, startedAt, toolMs },
+        );
+        json(res, 200, { ok: false, error: 'request_not_found', request_id: requestId });
+        return;
+      }
+
+      if (result.code === 'not_assigned_approver' || result.code === 'self_approval') {
+        // PL-251: reached only by an actor mapped in the request's tenant.
+        // "Not your request to decide" is honest for authenticated tenant
+        // staff — the T-66 indistinguishability covers actors the tenant
+        // does not know at all, not staff told the request isn't theirs.
+        await audit(requestId, `slack:${result.code}`, {
+          tenantId,
+          actor: 'slack',
+          authMs,
+          startedAt,
+          toolMs,
+        });
+        json(res, 200, {
+          ok: false,
+          error: result.code,
+          request_id: requestId,
+        });
+        return;
+      }
+
+      // illegal_transition — the request was already decided differently.
+      // Reached only by an actor mapped in the request's tenant; an
+      // approver learning "already decided" is honest, not a leak.
+      await audit(requestId, `slack:${result.code}`, {
         tenantId,
         actor: 'slack',
         authMs,
         startedAt,
         toolMs,
       });
-      deps.logger.info({
-        msg: 'slack_interaction',
-        tenant_id: tenantId,
+      json(res, 200, {
+        ok: false,
+        error: 'request_already_decided',
         request_id: requestId,
-        outcome: result.idempotent ? 'success:idempotent' : 'success',
-        total_ms: Math.round(performance.now() - startedAt),
       });
-      json(res, 200, { ok: true, request_id: requestId });
-      return;
+    } catch (err) {
+      deps.logger.error({
+        msg: 'slack_interaction_failed',
+        request_id: requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // The audit may itself fail if the pool is down — that is logged
+      // by audit()'s own catch; the response is generic either way.
+      await audit(requestId, 'error:slack_internal', {
+        tenantId: null,
+        actor: 'slack',
+        authMs,
+        startedAt,
+      });
+      json(res, 500, { error: 'internal_error', request_id: requestId });
     }
-
-    if (result.code === 'not_found' || result.code === 'unmapped_slack_actor') {
-      // T-66: identical wire response whether the request is in
-      // another tenant, nonexistent, or the actor is unmapped in the
-      // request's tenant. The audit row distinguishes — staff-side.
-      await audit(
-        requestId,
-        result.code === 'unmapped_slack_actor'
-          ? 'slack_unmapped_actor'
-          : 'slack_not_found',
-        { tenantId, actor: 'slack', authMs, startedAt, toolMs },
-      );
-      json(res, 200, { ok: false, error: 'request_not_found', request_id: requestId });
-      return;
-    }
-
-    // illegal_transition — the request was already decided differently.
-    // Reached only by an actor mapped in the request's tenant; an
-    // approver learning "already decided" is honest, not a leak.
-    await audit(requestId, `slack:${result.code}`, {
-      tenantId,
-      actor: 'slack',
-      authMs,
-      startedAt,
-      toolMs,
-    });
-    json(res, 200, {
-      ok: false,
-      error: 'request_already_decided',
-      request_id: requestId,
-    });
   };
 }

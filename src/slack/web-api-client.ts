@@ -37,6 +37,7 @@ export class WebApiSlackClient implements SlackClient {
           channel: message.channel,
           text: message.text,
           ...(message.threadTs !== undefined ? { thread_ts: message.threadTs } : {}),
+          ...(message.blocks !== undefined ? { blocks: [...message.blocks] } : {}),
         }),
       });
     } catch (err) {

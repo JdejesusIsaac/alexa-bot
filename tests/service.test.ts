@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../src/connector/fixture-sheet-connector.js';
@@ -34,40 +34,31 @@ let db: TestDb;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  // Seed tenants, column mappings, and derivation rules for both tenants.
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-
-    for (const m of TENANT_A_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_A, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const m of TENANT_B_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_B, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const r of TENANT_A_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_A, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-    for (const r of TENANT_B_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_B, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-  } finally {
-    owner.release();
+  // Seed tenants, column mappings, and derivation rules for both
+  // tenants. FORCE RLS binds the owner too — each tenant seeds under
+  // its own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
+  for (const [tenantId, mappings, rules] of [
+    [TENANT_A, TENANT_A_MAPPINGS, TENANT_A_DERIVATION_RULES],
+    [TENANT_B, TENANT_B_MAPPINGS, TENANT_B_DERIVATION_RULES],
+  ] as const) {
+    await withTenant(db.ownerPool, tenantId, async (owner) => {
+      for (const m of mappings) {
+        await owner.query(
+          `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
+          [tenantId, m.sheetHeader, m.canonicalField],
+        );
+      }
+      for (const r of rules) {
+        await owner.query(
+          `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
+          [tenantId, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
+        );
+      }
+    });
   }
 
   // Run a sync for tenant A so the roster is populated and fresh.
@@ -205,18 +196,16 @@ describe('PL-009 · T-21 via service: derived holds blocked for parents', () => 
 
 describe('PL-009 · T-15: four refusals are distinguishable', () => {
   it('roster_stale — fresh sync backdated past threshold', async () => {
-    // Backdate all successful syncs for tenant A to 2 hours ago
-    const owner = await db.ownerPool.connect();
-    try {
+    // Backdate all successful syncs for tenant A to 2 hours ago —
+    // owner write under A's context, since FORCE RLS binds it (B-12).
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
       await owner.query(
         `update roster_syncs
          set finished_at = now() - interval '2 hours'
          where tenant_id = $1 and outcome in ('success', 'partial-success')`,
         [TENANT_A],
       );
-    } finally {
-      owner.release();
-    }
+    });
 
     const result = await withTenant(db.appPool, TENANT_A, async (client) => {
       return getScholarStatus(client, {
@@ -233,17 +222,14 @@ describe('PL-009 · T-15: four refusals are distinguishable', () => {
     }
 
     // Restore freshness for subsequent tests
-    const owner2 = await db.ownerPool.connect();
-    try {
-      await owner2.query(
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
+      await owner.query(
         `update roster_syncs
          set finished_at = now()
          where tenant_id = $1 and outcome in ('success', 'partial-success')`,
         [TENANT_A],
       );
-    } finally {
-      owner2.release();
-    }
+    });
   });
 
   it('sync_failed — latest sync failed, no prior successful sync', async () => {
@@ -325,17 +311,14 @@ describe('PL-009 · T-15: four refusals are distinguishable', () => {
     const results: ScholarStatusResult[] = [];
 
     // roster_stale (backdate again briefly)
-    const owner = await db.ownerPool.connect();
-    try {
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
       await owner.query(
         `update roster_syncs
          set finished_at = now() - interval '2 hours'
          where tenant_id = $1 and outcome in ('success', 'partial-success')`,
         [TENANT_A],
       );
-    } finally {
-      owner.release();
-    }
+    });
 
     results.push(
       await withTenant(db.appPool, TENANT_A, async (client) => {
@@ -349,17 +332,14 @@ describe('PL-009 · T-15: four refusals are distinguishable', () => {
     );
 
     // Restore
-    const owner2 = await db.ownerPool.connect();
-    try {
-      await owner2.query(
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
+      await owner.query(
         `update roster_syncs
          set finished_at = now()
          where tenant_id = $1 and outcome in ('success', 'partial-success')`,
         [TENANT_A],
       );
-    } finally {
-      owner2.release();
-    }
+    });
 
     // sync_failed (tenant B already has a failed sync)
     results.push(

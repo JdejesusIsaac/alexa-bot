@@ -61,6 +61,7 @@ import {
 } from '../repositories/mcp-audit.js';
 import { withTenant } from '../db/tenant-context.js';
 import { createSlackInteractionHandler } from '../slack/interaction-endpoint.js';
+import { type PickupNotifier } from '../services/pickup-notification.js';
 
 const MAX_BODY_BYTES = 1_000_000;
 const SWEEP_INTERVAL_MS = 60_000;
@@ -94,6 +95,21 @@ export interface McpAppOptions {
   readonly jwksRefreshIntervalMs?: number;
   /** Prefetch the JWKS at construction (default true). Tests may disable it. */
   readonly warmJwksOnStart?: boolean;
+  /**
+   * Outbound Slack notifier (PL-252). Built by the entry point when
+   * Slack is configured; absent → notifications are skipped and every
+   * transition is unaffected.
+   */
+  readonly pickupNotifier?: PickupNotifier;
+  /**
+   * Per-tenant level-0 clocks (PL-253/254): `initial_minutes` keyed by
+   * tenant id, loaded from ESCALATION_LADDER_DIR — the same written
+   * ladders the worker climbs. A tenant with no entry falls back to
+   * `escalate_at = pickup_at` with an honest warning.
+   */
+  readonly escalationLadders?: Readonly<
+    Record<string, { readonly initialMinutes: number }>
+  >;
 }
 
 export function createMcpApp(options: McpAppOptions): McpApp {
@@ -144,11 +160,14 @@ export function createMcpApp(options: McpAppOptions): McpApp {
 
   // PL-207 — the Slack interaction boundary. Fails closed when the
   // signing secret is unset: an endpoint that cannot verify accepts
-  // nothing.
+  // nothing. PL-257: the tenant list is the probe set — the endpoint
+  // checks membership in every configured tenant so the probe count
+  // is constant whether the id resolves or not.
   const slackInteractionHandler = createSlackInteractionHandler({
     appPool,
     logger,
     signingSecret: config.slackSigningSecret,
+    tenantIds: config.slackTenantIds,
   });
 
   function sweepIdleSessions(): void {
@@ -596,6 +615,12 @@ export function createMcpApp(options: McpAppOptions): McpApp {
         appPool,
         rosterFreshnessMinutes: config.rosterFreshnessMinutes,
         logger,
+        ...(options.pickupNotifier !== undefined
+          ? { pickupNotifier: options.pickupNotifier }
+          : {}),
+        ...(options.escalationLadders !== undefined
+          ? { escalationLadders: options.escalationLadders }
+          : {}),
       });
       // The SDK's own type declarations predate exactOptionalPropertyTypes
       // and are not mutually assignable under it; the runtime interface is

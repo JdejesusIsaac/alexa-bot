@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { findByTenant, insertMapping } from '../src/repositories/column-mappings.js';
 import { mapRow } from '../src/mapping/mapper.js';
@@ -25,15 +25,12 @@ let db: TestDb;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus A'), ($2, 'Campus B')`,
-      [TENANT_A, TENANT_B],
-    );
-  } finally {
-    owner.release();
-  }
+  // FORCE RLS binds the owner too — each tenant row enters under its
+  // own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus A'],
+    [TENANT_B, 'Campus B'],
+  ]);
 });
 
 afterAll(async () => {

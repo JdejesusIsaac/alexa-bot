@@ -46,15 +46,19 @@ describe('PL-011 · seed() produces a reproducible two-tenant dataset', () => {
   });
 
   it('creates exactly two tenants', async () => {
-    const owner = await db.ownerPool.connect();
-    try {
-      const res = await owner.query('select id, name from tenants order by name');
-      expect(res.rows).toHaveLength(2);
-      expect(res.rows[0]!.name).toBe(TENANT_A_NAME);
-      expect(res.rows[1]!.name).toBe(TENANT_B_NAME);
-    } finally {
-      owner.release();
-    }
+    // Each tenant reads itself through RLS — a stronger assertion than
+    // a cross-tenant owner read, and the only read posture left under
+    // FORCE RLS (B-12).
+    const aTenants = await withTenant(db.appPool, TENANT_A, async (client) => {
+      const res = await client.query('select id, name from tenants');
+      return res.rows;
+    });
+    const bTenants = await withTenant(db.appPool, TENANT_B, async (client) => {
+      const res = await client.query('select id, name from tenants');
+      return res.rows;
+    });
+    expect(aTenants).toEqual([{ id: TENANT_A, name: TENANT_A_NAME }]);
+    expect(bTenants).toEqual([{ id: TENANT_B, name: TENANT_B_NAME }]);
   });
 
   it('seeds column mappings per tenant with different headers', async () => {

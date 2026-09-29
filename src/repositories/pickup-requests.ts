@@ -31,10 +31,25 @@ export type PickupRequestState =
   | 'denied'
   | 'released'
   | 'completed'
-  | 'expired';
+  | 'expired'
+  /**
+   * Terminal human handoff (PL-254): the attempt ceiling was reached
+   * with no decision. `stalled` never behaves like `approved` — it is
+   * unreachable by release/complete by construction (AD-26).
+   */
+  | 'stalled';
 
 export type PickupRequestAction =
-  'route' | 'approve' | 'flag' | 'deny' | 'release' | 'complete' | 'expire' | 'escalate';
+  | 'route'
+  | 'approve'
+  | 'flag'
+  | 'deny'
+  | 'release'
+  | 'complete'
+  | 'expire'
+  | 'escalate'
+  /** The worker's ceiling transition — routed → stalled only. */
+  | 'stall';
 
 /** Constrained reason vocabulary (F-5) — product default, widened by written decision (P3). */
 export const REASON_CATEGORIES = [
@@ -62,6 +77,11 @@ export interface PickupRequest {
   state: PickupRequestState;
   assigned_approver_id: string | null;
   escalation_level: number;
+  /**
+   * Skip/failure count against the worker's ceiling (PL-254). Bounded:
+   * at `ESCALATION_MAX_ATTEMPTS` the row stalls to a human.
+   */
+  escalation_attempts: number;
   escalate_at: Date | null;
   decided_at: Date | null;
   decided_by: string | null;
@@ -85,6 +105,7 @@ export interface PickupRequestEvent {
     | 'released'
     | 'completed'
     | 'expired'
+    | 'stalled'
     | 'refused';
   actor: string;
   /** How this transition arrived: Slack interaction, in-app tool, or the worker. */
@@ -120,6 +141,9 @@ const TRANSITIONS: Readonly<Record<PickupRequestAction, TransitionDef>> = {
   complete: { from: ['released'], to: 'completed', terminal: true },
   expire: { from: ['routed'], to: 'expired', terminal: true },
   escalate: { from: ['routed'], to: 'routed', terminal: false, requiresEscalateAt: true },
+  // AD-26's twin: the attempt ceiling is a terminal HUMAN handoff,
+  // never a path to approved/released/completed.
+  stall: { from: ['routed'], to: 'stalled', terminal: true },
 };
 
 /** Ladder actions are the only events that carry an escalation level. */
@@ -134,17 +158,26 @@ const ACTION_EVENT_TYPES: Readonly<
   release: 'released',
   complete: 'completed',
   expire: 'expired',
+  stall: 'stalled',
 };
 
 export interface TransitionRequest {
   readonly requestId: string;
   readonly action: PickupRequestAction;
   /**
-   * The audit subject driving the action — the `staff_identities`
-   * subject once PL-205 lands. Decisions record it as `decided_by`;
-   * the system drives `expire` and `escalate`.
+   * The audit subject driving the action — the resolved
+   * `staff_identities.subject` on staff channels. Decisions record it as
+   * `decided_by`; the system drives `expire` and `escalate`.
    */
   readonly actor: string;
+  /**
+   * The decider's `staff_identities.id`, resolved by the caller.
+   * REQUIRED for decision actions (approve/flag/deny): the chokepoint
+   * compares it to the request's `assigned_approver_id` — AD-27's one
+   * named approver, enforced where enforcement cannot be skipped
+   * (PL-251). Non-decision actions leave it unset.
+   */
+  readonly actorIdentityId?: string;
   /** Next escalation deadline — required by route and escalate. */
   readonly escalateAt?: Date;
   /** Ladder reassignment (PL-204). Unchanged when omitted. */
@@ -159,12 +192,20 @@ export type TransitionResult =
   | { ok: true; request: PickupRequest; idempotent: boolean }
   | {
       ok: false;
-      code: 'not_found' | 'illegal_transition' | 'missing_field';
+      code:
+        | 'not_found'
+        | 'illegal_transition'
+        | 'missing_field'
+        | 'not_assigned_approver'
+        | 'self_approval';
       from: PickupRequestState | null;
       action: PickupRequestAction;
       /** The absent required field, for `missing_field`. */
       field?: string;
     };
+
+/** The actions that decide a request — and only they need an assignee. */
+const DECISION_ACTIONS: readonly PickupRequestAction[] = ['approve', 'flag', 'deny'];
 
 /**
  * Create a pickup request in `draft` — intake captured, nothing routed.
@@ -221,22 +262,26 @@ export async function findPickupRequestById(
  * (PL-207). The Slack endpoint verifies a Slack signature, not a
  * tenant token — the tenant must be derived from the request itself.
  *
- * Backed by a read-only SECURITY DEFINER function that returns
- * tenant_id or NULL and nothing else. The result is never disclosed:
- * the endpoint answers not-found identically whether the id resolves
- * to another tenant or to nothing (T-66).
+ * Backed by a read-only SECURITY DEFINER *membership* function
+ * (migration 0010): `pickup_request_belongs_to_tenant` returns a
+ * boolean and nothing else — it confirms, it does not disclose. The
+ * endpoint probes each configured tenant; the wire answers not-found
+ * identically whether the id resolves to another tenant or to nothing
+ * (T-66), and leak vector 30's oracle is closed.
  */
-export async function findPickupRequestTenant(
+export async function pickupRequestBelongsToTenant(
   pool: Pool,
   requestId: string,
-): Promise<string | null> {
+  // eslint-disable-next-line no-restricted-syntax -- Rule 7 scoped to this one parameter, deliberately (B-5): this tenant arrives from SLACK_TENANT_IDS configuration at the Slack endpoint (PL-257), never from a caller or tool argument; the SQL surface stays boolean membership only, per leak vector 30 (T-82).
+  tenantId: string,
+): Promise<boolean> {
   const client = await pool.connect();
   try {
-    const res = await client.query<{ tenant_id: string | null }>(
-      `select find_pickup_request_tenant($1) as tenant_id`,
-      [requestId],
+    const res = await client.query<{ belongs: boolean }>(
+      `select pickup_request_belongs_to_tenant($1, $2) as belongs`,
+      [requestId, tenantId],
     );
-    return res.rows[0]?.tenant_id ?? null;
+    return res.rows[0]?.belongs === true;
   } finally {
     client.release();
   }
@@ -299,12 +344,20 @@ export async function getReasonDetailRetentionDays(client: PoolClient): Promise<
  *  - `illegal_transition` — a typed refusal naming the attempted
  *    transition; no state change; a `refused` event row records the
  *    attempt (T-53).
+ *  - decision authorization FIRST (PL-274, B-1) — for approve/flag/deny,
+ *    the assignee and self-approval checks run before ANY success
+ *    shape, including the idempotent replay. A non-assignee or the
+ *    creator re-deciding an already-decided request gets the typed
+ *    refusal and a `refused` ledger event; the audit trail never
+ *    records a successful decision by someone with no right to make
+ *    it. The state never changed — the audit row was the corruption.
  *  - idempotent — re-applying the action that produced the current
  *    state is a no-op returning the current state, never an error the
  *    caller cannot distinguish from real failure (T-54, the Slack
- *    at-least-once case). `escalate` is excluded: its from and to
- *    states are identical, and its double-fire guard is the event
- *    unique constraint, not state idempotency.
+ *    at-least-once case) — and reachable only by the actor the
+ *    authorization checks above allowed. `escalate` is excluded: its
+ *    from and to states are identical, and its double-fire guard is
+ *    the event unique constraint, not state idempotency.
  *
  * Terminal transitions purge `reason_detail` when the tenant retention
  * is 0 (P3) — the enforcement lives here, at the chokepoint, not in a
@@ -331,12 +384,80 @@ export async function transitionPickupRequest(
     return { ok: false, code: 'not_found', from: null, action: request.action };
   }
 
-  // 2. Idempotent replay of the settled outcome — a no-op success.
+  // 2. Decision authorization (PL-251, AD-27 — and PL-274, B-1): a
+  //     decision is legal only from the request's currently assigned
+  //     approver, resolved to a staff identity by the caller — and
+  //     never from the request's own creator, even when routing
+  //     assigned them. The check lives here, at the chokepoint, because
+  //     a rule held by memory in two handlers fails in the third
+  //     (Sprint 2 F-1).
+  //
+  //     It runs BEFORE the idempotent-replay short-circuit and before
+  //     the illegal-transition classification (PL-274). The Sprint 3.1
+  //     evaluation put a door in front of the lock: the replay branch
+  //     returned a success shape before these checks ran, so a
+  //     non-assignee or the creator re-deciding an already-decided
+  //     request got "Decision recorded" and a success:idempotent audit
+  //     row. The state never changed — but the audit recorded a
+  //     successful decision by someone with no right to make it, and
+  //     the audit trail was the thing corrupted. Authorization first;
+  //     idempotency is a courtesy for the actor entitled to it.
+  if (DECISION_ACTIONS.includes(request.action)) {
+    if (request.actorIdentityId === undefined) {
+      return {
+        ok: false,
+        code: 'missing_field',
+        from: current.state,
+        action: request.action,
+        field: 'actorIdentityId',
+      };
+    }
+    if (request.actorIdentityId !== current.assigned_approver_id) {
+      await insertPickupRequestEvent(client, {
+        requestId: current.id,
+        escalationLevel: null,
+        eventType: 'refused',
+        actor: request.actor,
+        channel,
+      });
+      return {
+        ok: false,
+        code: 'not_assigned_approver',
+        from: current.state,
+        action: request.action,
+      };
+    }
+    // The creator is the `routed` event's actor — the subject that
+    // routed the request. A decider equal to it is self-approval even
+    // when they are the assignee; the request escalates instead.
+    const creator = await requestCreatorSubject(client, current.id);
+    if (creator !== null && creator === request.actor) {
+      await insertPickupRequestEvent(client, {
+        requestId: current.id,
+        escalationLevel: null,
+        eventType: 'refused',
+        actor: request.actor,
+        channel,
+      });
+      return {
+        ok: false,
+        code: 'self_approval',
+        from: current.state,
+        action: request.action,
+      };
+    }
+  }
+
+  // 3. Idempotent replay of the settled outcome — a no-op success,
+  //     reachable now only by the actor the checks above authorized
+  //     (PL-274). The Slack at-least-once case and a double-click in
+  //     the app both return the current state for the ASSIGNEE; anyone
+  //     else replaying was already refused above.
   if (request.action !== 'escalate' && current.state === def.to) {
     return { ok: true, request: current, idempotent: true };
   }
 
-  // 3. Illegal transition — typed refusal, no state change, and the
+  // 4. Illegal transition — typed refusal, no state change, and the
   //    attempt is recorded in the event ledger (T-53).
   if (!def.from.includes(current.state)) {
     await insertPickupRequestEvent(client, {
@@ -354,7 +475,7 @@ export async function transitionPickupRequest(
     };
   }
 
-  // 4. Required per-action fields — a caller error, not a machine event.
+  // 5. Required per-action fields — a caller error, not a machine event.
   if (def.requiresEscalateAt === true && request.escalateAt === undefined) {
     return {
       ok: false,
@@ -369,13 +490,39 @@ export async function transitionPickupRequest(
   const retentionDays = def.terminal ? await getReasonDetailRetentionDays(client) : 0;
   const purgeDetail = def.terminal && retentionDays === 0;
 
-  // 6. Apply. The state guard in the WHERE is the backstop to the lock.
+  // 6. Apply. The state guard in the WHERE is the backstop to the lock —
+  //    and for decisions, so is the ASSIGNEE guard (PL-275, B-2): the
+  //    UPDATE matches only the row the authorization check saw.
   const updated = await applyTransition(client, request, current, purgeDetail);
   if (updated === null) {
-    // The row changed under us despite the lock — re-read and classify.
+    // The row changed under us — re-read and classify.
     const reRead = await findPickupRequestById(client, request.requestId);
     if (reRead === null) {
       return { ok: false, code: 'not_found', from: null, action: request.action };
+    }
+    // A decision whose UPDATE missed while the state is still legal
+    // means the assignee changed between the check and the update —
+    // the decider is no longer the assigned approver (B-2's race,
+    // caught by the predicate). Refuse, ledger, audit: a stale
+    // approver's decision never lands.
+    if (
+      DECISION_ACTIONS.includes(request.action) &&
+      def.from.includes(reRead.state) &&
+      reRead.assigned_approver_id !== current.assigned_approver_id
+    ) {
+      await insertPickupRequestEvent(client, {
+        requestId: reRead.id,
+        escalationLevel: null,
+        eventType: 'refused',
+        actor: request.actor,
+        channel,
+      });
+      return {
+        ok: false,
+        code: 'not_assigned_approver',
+        from: reRead.state,
+        action: request.action,
+      };
     }
     return {
       ok: false,
@@ -401,6 +548,26 @@ export async function transitionPickupRequest(
   return { ok: true, request: updated, idempotent: false };
 }
 
+/**
+ * The subject that routed the request — its creator. Read from the
+ * `routed` ledger event (the transition table guarantees exactly one:
+ * `route` is legal only from `draft`, and the event is written on
+ * success). Used by the self-approval check in the chokepoint.
+ */
+async function requestCreatorSubject(
+  client: PoolClient,
+  requestId: string,
+): Promise<string | null> {
+  const res = await client.query<{ actor: string }>(
+    `select actor from pickup_request_events
+     where request_id = $1 and event_type = 'routed'
+     order by created_at asc, id asc
+     limit 1`,
+    [requestId],
+  );
+  return res.rows[0]?.actor ?? null;
+}
+
 /** Apply one action's UPDATE. Returns null when the state guard rejects. */
 async function applyTransition(
   client: PoolClient,
@@ -409,8 +576,14 @@ async function applyTransition(
   purgeDetail: boolean,
 ): Promise<PickupRequest | null> {
   // Each action's SET clause, in the order (setSql, params) built below.
+  // Decisions carry a THIRD guard (PL-275, B-2): the UPDATE matches only
+  // the assignee the authorization check authorized — so a reassignment
+  // that somehow lands between check and update makes the UPDATE miss
+  // rather than record a stale approver's decision.
+  const isDecision = DECISION_ACTIONS.includes(request.action);
   let setSql: string;
   const params: unknown[] = [request.requestId, current.state];
+  if (isDecision) params.push(current.assigned_approver_id);
 
   const param = (value: unknown): string => {
     params.push(value);
@@ -443,6 +616,12 @@ async function applyTransition(
       setSql = `state = 'expired', expired_at = now(),
                 reason_detail = ${purgeDetail ? 'null' : 'reason_detail'}`;
       break;
+    case 'stall':
+      // Terminal human handoff — purged like every terminal state;
+      // decided_by stays null because no decision happened (E3).
+      setSql = `state = 'stalled',
+                reason_detail = ${purgeDetail ? 'null' : 'reason_detail'}`;
+      break;
     case 'escalate':
       setSql = `escalation_level = escalation_level + 1,
                 escalate_at = ${param(request.escalateAt)},
@@ -450,9 +629,10 @@ async function applyTransition(
       break;
   }
 
+  const assigneeGuard = isDecision ? ` and assigned_approver_id = $3` : '';
   const res = await client.query<PickupRequest>(
     `update pickup_requests set ${setSql}
-     where id = $1 and state = $2
+     where id = $1 and state = $2${assigneeGuard}
      returning *`,
     params,
   );
@@ -517,6 +697,8 @@ export async function listPendingApprovalsForApprover(
 export interface DueEscalationRow {
   readonly id: string;
   readonly escalation_level: number;
+  /** Skip/failure count toward the worker's attempt ceiling (PL-254). */
+  readonly escalation_attempts: number;
 }
 
 export interface DueEscalationStats {
@@ -524,6 +706,7 @@ export interface DueEscalationStats {
   readonly escalated: number;
   readonly expired: number;
   readonly skipped: number;
+  readonly stalled: number;
   readonly failed: number;
 }
 
@@ -542,14 +725,23 @@ export interface DueEscalationStats {
  * `onRowError` runs after the savepoint rollback, inside the still-open
  * transaction: the worker uses it to write the AD-42 failure audit. It
  * must not throw (the worker's audit catches its own errors).
+ *
+ * Queue fairness (PL-254): a row that skips or fails does not keep its
+ * head-of-line slot. `escalate_at` is deferred `deferralSeconds` and
+ * `escalation_attempts` increments — in this transaction, after the
+ * savepoint release/rollback, so the deferral is atomic with the batch
+ * and a poisoned row can no longer starve the healthy ones behind it
+ * (the due query is oldest-first). At the ceiling the worker stalls
+ * the row through `transitionPickupRequest` — the queue only counts.
  */
 export async function processDueEscalations(
   client: PoolClient,
   batchSize: number,
+  deferralSeconds: number,
   processRow: (
     client: PoolClient,
     row: DueEscalationRow,
-  ) => Promise<'escalated' | 'expired' | 'skipped'>,
+  ) => Promise<'escalated' | 'expired' | 'skipped' | 'stalled'>,
   onRowError: (client: PoolClient, row: DueEscalationRow, err: unknown) => Promise<void>,
 ): Promise<DueEscalationStats> {
   const stats = {
@@ -557,13 +749,24 @@ export async function processDueEscalations(
     escalated: 0,
     expired: 0,
     skipped: 0,
+    stalled: 0,
     failed: 0,
+  };
+
+  const deferRow = async (rowId: string): Promise<void> => {
+    await client.query(
+      `update pickup_requests
+       set escalation_attempts = escalation_attempts + 1,
+           escalate_at = now() + ($2 || ' seconds')::interval
+       where id = $1 and state = 'routed'`,
+      [rowId, deferralSeconds],
+    );
   };
 
   await client.query('begin');
   try {
     const due = await client.query<DueEscalationRow>(
-      `select id, escalation_level from pickup_requests
+      `select id, escalation_level, escalation_attempts from pickup_requests
        where state = 'routed' and escalate_at < now()
        order by escalate_at asc
        limit $1
@@ -578,11 +781,14 @@ export async function processDueEscalations(
         const outcome = await processRow(client, row);
         if (outcome === 'escalated') stats.escalated += 1;
         else if (outcome === 'expired') stats.expired += 1;
+        else if (outcome === 'stalled') stats.stalled += 1;
         else stats.skipped += 1;
         await client.query('release savepoint escalation_row');
+        if (outcome === 'skipped') await deferRow(row.id);
       } catch (err) {
         await client.query('rollback to savepoint escalation_row');
         stats.failed += 1;
+        await deferRow(row.id);
         await onRowError(client, row, err);
       }
     }

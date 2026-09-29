@@ -126,6 +126,9 @@ export const TOOL_MINIMUM_FIELDS: Readonly<Record<string, readonly string[]>> = 
     'escalation_level',
   ],
   decide_pickup_request: ['request_id', 'state', 'decided_at'],
+  // The handoff record (PL-252): what happened to the request, nothing
+  // about why it was requested or who decided it.
+  record_pickup_outcome: ['request_id', 'state'],
 };
 
 function isClearedForRole(clearance: Clearance, role: Role): boolean {

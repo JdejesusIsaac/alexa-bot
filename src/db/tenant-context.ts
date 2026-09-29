@@ -45,3 +45,40 @@ export async function withTenant<T>(
     client.release();
   }
 }
+
+/**
+ * The transactional tenant context (PL-275, B-2): read-check-update in
+ * ONE transaction, so the row lock a decision takes at its first read
+ * is held across the whole sequence. Without this, every statement
+ * autocommitted and the lock released immediately — a control that read
+ * correctly in one file was defeated by how its callers called it, and
+ * a reassignment could land between the authorization check and the
+ * UPDATE (the evaluator's B-2).
+ *
+ * The tenant setting is TRANSACTION-LOCAL (`set_config(..., true)`): it
+ * cannot outlive the transaction even on rollback, so T-04's
+ * no-leaked-context guarantee holds by construction rather than by a
+ * manual reset. On error the transaction rolls back and the error
+ * rethrows — the caller decides what the failure means.
+ */
+export async function withTenantTransaction<T>(
+  pool: Pool,
+  tenantId: string,
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    await client.query(`select set_config('app.tenant_id', $1, true)`, [tenantId]);
+    try {
+      const result = await fn(client);
+      await client.query('commit');
+      return result;
+    } catch (err) {
+      await client.query('rollback');
+      throw err;
+    }
+  } finally {
+    client.release();
+  }
+}

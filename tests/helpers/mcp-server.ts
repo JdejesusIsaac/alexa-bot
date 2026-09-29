@@ -21,6 +21,8 @@ import { provisionTestDb, type TestDb } from './db.js';
 import { withTenant } from '../../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../../src/connector/fixture-sheet-connector.js';
+import { type PickupNotifier } from '../../src/services/pickup-notification.js';
+import { type Pool } from 'pg';
 import {
   TENANT_A,
   TENANT_B,
@@ -54,6 +56,30 @@ export interface TestMcpServerOptions {
   readonly warmJwksOnStart?: boolean;
   /** Slack signing secret for the interaction endpoint (PL-207). */
   readonly slackSigningSecret?: string;
+  /**
+   * Outbound Slack notifier for the tool layer (PL-252). Tests inject
+   * a CaptureSlackClient-backed notifier; absent → nothing is sent and
+   * transitions are unaffected.
+   */
+  readonly pickupNotifier?: PickupNotifier;
+  /**
+   * Per-tenant level-0 clocks for route (PL-253/254): `initial_minutes`
+   * keyed by tenant id. A tenant with no entry falls back to
+   * `escalate_at = pickup_at` and the `initial_clock_unconfigured`
+   * warning is logged.
+   */
+  readonly escalationLadders?: Readonly<
+    Record<string, { readonly initialMinutes: number }>
+  >;
+  /** Tenant ids the Slack interaction endpoint probes (PL-257). */
+  readonly slackTenantIds?: readonly string[];
+  /**
+   * Test-only seam for query counting (T-83): wraps the app pool the
+   * HTTP layer sees — e.g. to count `pickup_request_belongs_to_tenant`
+   * calls per request and prove the probe count is constant. Applied
+   * after seeding; returned pool is what createMcpApp receives.
+   */
+  readonly appPoolWrapper?: (pool: Pool) => Pool;
 }
 
 export interface TestMcpServer {
@@ -87,38 +113,31 @@ export async function startTestMcpServer(
 ): Promise<TestMcpServer> {
   const db = await provisionTestDb();
 
-  // Seed tenants, mappings, derivation rules — owner role, explicit SQL,
-  // mirroring the Sprint 1 service tests.
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-    for (const [tenantId, mappings] of [
-      [TENANT_A, TENANT_A_MAPPINGS],
-      [TENANT_B, TENANT_B_MAPPINGS],
-    ] as const) {
+  // Seed tenants, mappings, derivation rules — owner role, explicit SQL.
+  // FORCE RLS binds the owner too, so each tenant seeds under its own
+  // context (B-12); there is no cross-tenant VALUES list.
+  for (const [tenantId, tenantName, mappings, rules] of [
+    [TENANT_A, 'Campus Alpha', TENANT_A_MAPPINGS, TENANT_A_DERIVATION_RULES],
+    [TENANT_B, 'Campus Bravo', TENANT_B_MAPPINGS, TENANT_B_DERIVATION_RULES],
+  ] as const) {
+    await withTenant(db.ownerPool, tenantId, async (owner) => {
+      await owner.query(`insert into tenants (id, name) values ($1, $2)`, [
+        tenantId,
+        tenantName,
+      ]);
       for (const m of mappings) {
         await owner.query(
           `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
           [tenantId, m.sheetHeader, m.canonicalField],
         );
       }
-    }
-    for (const [tenantId, rules] of [
-      [TENANT_A, TENANT_A_DERIVATION_RULES],
-      [TENANT_B, TENANT_B_DERIVATION_RULES],
-    ] as const) {
       for (const r of rules) {
         await owner.query(
           `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
           [tenantId, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
         );
       }
-    }
-  } finally {
-    owner.release();
+    });
   }
 
   // Fresh roster for both tenants (also seeds quarantined dirty rows).
@@ -197,11 +216,19 @@ export async function startTestMcpServer(
     ROSTER_FRESHNESS_MINUTES: String(options.rosterFreshnessMinutes ?? 45),
     SESSION_TTL_MINUTES: String(options.sessionTtlMinutes ?? 60),
     SLACK_SIGNING_SECRET: options.slackSigningSecret ?? SYNTHETIC_SLACK_SIGNING_SECRET,
+    SLACK_TENANT_IDS: (options.slackTenantIds ?? [TENANT_A, TENANT_B]).join(','),
   });
+
+  // The pool the HTTP layer sees — normally db.appPool; a test may wrap
+  // it to observe queries (T-83's probe-count assertions).
+  const appPool =
+    options.appPoolWrapper !== undefined
+      ? options.appPoolWrapper(db.appPool)
+      : db.appPool;
 
   const app = createMcpApp({
     config,
-    appPool: db.appPool,
+    appPool,
     logger,
     ...(options.sweepIntervalMs !== undefined
       ? { sweepIntervalMs: options.sweepIntervalMs }
@@ -211,6 +238,12 @@ export async function startTestMcpServer(
       : {}),
     ...(options.warmJwksOnStart !== undefined
       ? { warmJwksOnStart: options.warmJwksOnStart }
+      : {}),
+    ...(options.pickupNotifier !== undefined
+      ? { pickupNotifier: options.pickupNotifier }
+      : {}),
+    ...(options.escalationLadders !== undefined
+      ? { escalationLadders: options.escalationLadders }
       : {}),
   });
   server.on('request', (req, res) => {

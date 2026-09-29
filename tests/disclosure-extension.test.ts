@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { upsertStudent } from '../src/repositories/students.js';
 import { createPickupRequest } from '../src/repositories/pickup-requests.js';
@@ -39,14 +39,15 @@ let requestRow: Record<string, unknown>;
 beforeAll(async () => {
   db = await provisionTestDb();
 
+  // FORCE RLS binds the owner too — the tenant row enters under its
+  // own context (B-12).
+  await seedTenants(db.ownerPool, [[TENANT_A, 'Campus Alpha']]);
+
+  // T-69's setup: a brand-new column on pickup_requests, undeclared to
+  // the policy. Every `select *` row now carries it. DDL is not
+  // row-scoped — no tenant context needed.
   const owner = await db.ownerPool.connect();
   try {
-    await owner.query(`insert into tenants (id, name) values ($1, 'Campus Alpha')`, [
-      TENANT_A,
-    ]);
-
-    // T-69's setup: a brand-new column on pickup_requests, undeclared to
-    // the policy. Every `select *` row now carries it.
     await owner.query(`alter table pickup_requests add column t69_canary text`);
   } finally {
     owner.release();

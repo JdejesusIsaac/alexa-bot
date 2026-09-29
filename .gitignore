@@ -8,6 +8,7 @@ fixtures/real/
 .env
 .env.*
 !.env.example
+secrets/
 
 # --- Harness ---
 .windsurf/state/*

@@ -158,22 +158,37 @@ Requires **Node 20+** and a reachable **PostgreSQL 15+**. No Docker needed — s
 ```bash
 npm install
 cp .env.example .env        # then edit
-createdb parentline_dev
+
+# Once, connected to Postgres as a superuser (psql). The owner role runs
+# migrations and provisions throwaway test databases; migration 0000
+# creates the app role (parentline_app) as the owner, so no one else
+# needs to touch roles by hand. That is why the owner needs CREATEROLE
+# — without it migration 0000 fails with "permission denied to create
+# role" on a fresh cluster (T-89 proves this against these exact
+# grants) — and CREATEDB, for the throwaway test databases:
+#   create role parentline_owner login createdb createrole;
+createdb -O parentline_owner parentline
+
 npm run migrate
-npm run verify              # typecheck + lint + test
+npm run verify              # typecheck + lint + dead-export check + test
 ```
+
+**Secrets live in files, not environment variables.** The Google service
+account key goes in `secrets/` (gitignored) and `GOOGLE_SERVICE_ACCOUNT_FILE`
+points at it — e.g. `GOOGLE_SERVICE_ACCOUNT_FILE=./secrets/sa.json`. A key in
+an env var is printable by a variable listing; a file path is not a secret.
 
 ### Two database roles, deliberately
 
 `DATABASE_URL` is an **owner** connection that runs migrations. `APP_DATABASE_URL` is a **non-owner, non-superuser** connection that serves reads.
 
-This is not ceremony. **Table owners and superusers bypass RLS silently.** If the application connects as the owner, every isolation test passes and production leaks. `APP_DATABASE_URL` is required in production for exactly this reason, and test T-05 aborts the suite if the effective role can bypass RLS.
+This is not ceremony. **Superusers bypass RLS entirely; table owners can disable or drop the policies outright** (and bypass them silently wherever `FORCE` is missing). If the application connects as the owner, every isolation test passes and production leaks. `APP_DATABASE_URL` is required in production for exactly this reason, and test T-05 aborts the suite if the effective role can bypass RLS. **The suite itself now refuses to run if the app connection turns out to be privileged** — it fails at setup, naming the role and the fix (T-85), not a warning and not a skip. The Sprint 3.1 evaluation ran the isolation gate with a superuser standing in for the app role and reported green; that configuration is now impossible to run, not merely discouraged.
 
 ## Scripts
 
 | Command | Purpose |
 |---|---|
-| `npm run verify` | The CI gate: typecheck → lint → test |
+| `npm run verify` | The CI gate: typecheck → lint → dead-export check → test |
 | `npm run test:isolation` | T-01…T-05 only. Run before every commit |
 | `npm run migrate` | Apply migrations as the owner role |
 | `npm run seed` | Seed synthetic two-tenant fixture data |

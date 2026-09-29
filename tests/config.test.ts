@@ -40,8 +40,9 @@ describe('loadConfig', () => {
   });
 
   it('requires a separate application role in production', () => {
-    // Owners bypass RLS silently. If the app connects as the owner, every
-    // isolation test passes and production leaks — so this is fatal, not a
+    // An owner can disable or drop the RLS policies outright — and
+    // bypasses them silently wherever FORCE is missing. If the app
+    // connects as the owner, the gate is void — so this is fatal, not a
     // warning.
     expect(() => loadConfig({ ...base, NODE_ENV: 'production' })).toThrow(
       /APP_DATABASE_URL is required in production/,

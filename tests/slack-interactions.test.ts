@@ -15,6 +15,7 @@ import { findStaffIdentityBySlackUserId } from '../src/repositories/staff-identi
 import { upsertStudent } from '../src/repositories/students.js';
 import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 import { todayServiceDate } from '../src/util/service-date.js';
+import { median, percentile } from './helpers/stats.js';
 
 /**
  * PL-207 — the Slack interaction endpoint (inbound), graded by T-65 and
@@ -302,6 +303,11 @@ describe('PL-207 · T-66: cross-tenant request_id is not-found, never forbidden-
       'USYNTH_A_SECTION',
     );
 
+    // T-74: the samples must carry variance — a distribution of
+    // identical values would "prove" parity at any percentile index.
+    expect(Math.max(...cross)).not.toBe(Math.min(...cross));
+    expect(Math.max(...nowhere)).not.toBe(Math.min(...nowhere));
+
     const medCross = median(cross);
     const medNowhere = median(nowhere);
     const p90Cross = percentile(cross, 0.9);
@@ -315,13 +321,291 @@ describe('PL-207 · T-66: cross-tenant request_id is not-found, never forbidden-
   });
 });
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]!;
-}
+// ── T-74: the instrument itself — assert the helper before the statistic ──
 
-function percentile(values: number[], p: number): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
-  return sorted[idx]!;
-}
+describe('PL-255 · T-74: the percentile helper measures what it claims', () => {
+  it('p90 of 1…200 returns the tail element, not index 1', () => {
+    // The constructed distribution where the old bug was loudest:
+    // (0.9/100)·200 = index 1 — the second-FASTEST sample, reported as
+    // the tail while T-66 ran green on it.
+    const ordered = Array.from({ length: 200 }, (_, i) => i + 1);
+    const p90 = percentile(ordered, 0.9);
+    expect(p90).toBeGreaterThanOrEqual(180);
+    expect(p90).toBeLessThanOrEqual(182);
+    expect(p90).not.toBe(ordered[1]);
+  });
+
+  it('the shared helper is the one the parity legs call — identical semantics to the mcp-audit copy', async () => {
+    // T-74's "shared import" leg: this file imports stats.ts; mcp-audit
+    // still has its own copy — assert the SAME semantics on the same
+    // input so a future divergence fails here, not silently.
+    const jittered = Array.from({ length: 200 }, (_, i) =>
+      100 + ((i * 37) % 23) + i * 0.01,
+    );
+    const p50 = percentile(jittered, 0.5);
+    const p90 = percentile(jittered, 0.9);
+    const sorted = [...jittered].sort((a, b) => a - b);
+    expect(p50).toBe(sorted[Math.floor(200 * 0.5)]);
+    expect(p90).toBe(sorted[Math.floor(200 * 0.9)]);
+    // The boundary: p near 1 clamps to the last element, never past it.
+    expect(percentile(jittered, 1.0)).toBe(sorted[199]);
+  });
+});
+
+// ── T-80: a thrown decision path is an audited 500, not a not-found ──
+
+describe('PL-258 · T-80: a thrown error is audited — never confused with not-found', () => {
+  it('a mid-decision failure returns a generic 500 and an error:slack_internal audit row', async () => {
+    // A fresh routed request in tenant A with a mapped approver —
+    // seeded BEFORE the fault lands.
+    const requestId = await withTenant(
+      server.db.appPool,
+      TENANT_A,
+      async (client) => {
+        const student = await upsertStudent(client, {
+          studentRef: 'SI-500',
+          studentName: 'Error Path Scholar',
+          section: '101',
+        });
+        const approver = await findStaffIdentityBySlackUserId(
+          client,
+          'USYNTH_A_SECTION',
+        );
+        const request = await createPickupRequest(client, {
+          serviceDate: todayServiceDate(),
+          studentId: student.id,
+          pickupAt: new Date('2030-03-15T18:30:00Z'),
+          reasonCategory: 'appointment',
+          intakeChannel: 'coordinator',
+        });
+        const routed = await transitionPickupRequest(client, {
+          requestId: request.id,
+          action: 'route',
+          actor: 'intake-coordinator',
+          escalateAt: new Date('2030-03-15T18:30:00Z'),
+          assignedApproverId: approver!.id,
+        });
+        expect(routed.ok).toBe(true);
+        return request.id;
+      },
+    );
+
+    // Force the throw: the decision path's identity lookup cannot run.
+    // Grant-scoped, restored in finally — the test db is per-file.
+    const owner = await server.db.ownerPool.connect();
+    try {
+      await owner.query(
+        'revoke select on staff_identities from parentline_app',
+      );
+
+      const res = await postSigned(requestId, 'USYNTH_A_SECTION');
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string; request_id: string };
+      // Not the not-found shape — an internal error must not masquerade
+      // as the oracle surface, and must carry no internals.
+      expect(body.error).not.toBe('request_not_found');
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toMatch(/staff_identities|permission|relation|column/i);
+
+      const audits = await auditRowFor(body.request_id);
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+      expect(audits.some((a) => a.outcome === 'error:slack_internal')).toBe(true);
+    } finally {
+      await owner.query(
+        'grant select on staff_identities to parentline_app',
+      );
+      owner.release();
+    }
+  });
+});
+
+// ── T-83: constant-work tenant resolution (probe count + decoy) ──────
+
+describe('PL-257 · T-83: every request probes every tenant — constant count, decoy on miss', () => {
+  let probeCount = 0;
+  let decoyQueries: string[] = [];
+  let probeServer: TestMcpServer;
+  let crossTenantRequest: string; // exists in tenant B only
+
+  beforeAll(async () => {
+    probeServer = await startTestMcpServer({
+      appPoolWrapper: (pool) => {
+        const connect = pool.connect.bind(pool);
+        pool.connect = (async () => {
+          const client = await connect();
+          // The pool returns the same client object across connect()
+          // calls — wrap once or each query counts per wrap layer.
+          const tagged = client as typeof client & { __probeWrapped?: boolean };
+          if (tagged.__probeWrapped === true) return client;
+          tagged.__probeWrapped = true;
+          const query = client.query.bind(client);
+          client.query = ((sql: unknown, ...rest: unknown[]) => {
+            if (typeof sql === 'string') {
+              if (sql.includes('pickup_request_belongs_to_tenant')) {
+                probeCount += 1;
+              } else {
+                decoyQueries.push(sql);
+              }
+            }
+            return query(sql as never, ...(rest as never[]));
+          }) as typeof client.query;
+          return client;
+        }) as typeof pool.connect;
+        return pool;
+      },
+    });
+
+    crossTenantRequest = await withTenant(
+      probeServer.db.appPool,
+      TENANT_B,
+      async (client) => {
+        const student = await upsertStudent(client, {
+          studentRef: 'SI-900',
+          studentName: 'Parity Scholar',
+          section: '101',
+        });
+        const approver = await findStaffIdentityBySlackUserId(
+          client,
+          'USYNTH_B_SECTION',
+        );
+        const request = await createPickupRequest(client, {
+          serviceDate: todayServiceDate(),
+          studentId: student.id,
+          pickupAt: new Date('2030-03-15T18:30:00Z'),
+          reasonCategory: 'appointment',
+          intakeChannel: 'coordinator',
+        });
+        const routed = await transitionPickupRequest(client, {
+          requestId: request.id,
+          action: 'route',
+          actor: 'intake-coordinator',
+          escalateAt: new Date('2030-03-15T18:30:00Z'),
+          assignedApproverId: approver!.id,
+        });
+        expect(routed.ok).toBe(true);
+        return request.id;
+      },
+    );
+  });
+
+  afterAll(async () => {
+    await probeServer.close();
+  });
+
+  async function postTo(
+    requestId: string,
+    slackUserId: string,
+  ): Promise<Response> {
+    const body = interactionBody(requestId, slackUserId);
+    const { signature, timestamp } = sign(Math.floor(Date.now() / 1000), body);
+    const headers: Record<string, string> = {
+      'content-type': 'application/x-www-form-urlencoded',
+      'x-slack-request-timestamp': timestamp,
+      'x-slack-signature': signature,
+    };
+    return fetch(`${probeServer.url}${ENDPOINT}`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+  }
+
+  it('probes every configured tenant — same count for existent, cross-tenant, nonexistent, malformed', async () => {
+    const configured = 2; // the helper's default SLACK_TENANT_IDS: [A, B]
+
+    // A request that exists in the FIRST probed tenant — no early exit.
+    const inA = await withTenant(
+      probeServer.db.appPool,
+      TENANT_A,
+      async (client) => {
+        const student = await upsertStudent(client, {
+          studentRef: 'SI-901',
+          studentName: 'Parity Scholar Two',
+          section: '101',
+        });
+        const approver = await findStaffIdentityBySlackUserId(
+          client,
+          'USYNTH_A_SECTION',
+        );
+        const request = await createPickupRequest(client, {
+          serviceDate: todayServiceDate(),
+          studentId: student.id,
+          pickupAt: new Date('2030-03-15T18:30:00Z'),
+          reasonCategory: 'appointment',
+          intakeChannel: 'coordinator',
+        });
+        const routed = await transitionPickupRequest(client, {
+          requestId: request.id,
+          action: 'route',
+          actor: 'intake-coordinator',
+          escalateAt: new Date('2030-03-15T18:30:00Z'),
+          assignedApproverId: approver!.id,
+        });
+        expect(routed.ok).toBe(true);
+        return request.id;
+      },
+    );
+
+    probeCount = 0;
+    await postTo(inA, 'USYNTH_A_SECTION');
+    expect(probeCount).toBe(configured);
+
+    // Exists only in tenant B — the A probed first misses, B hits.
+    probeCount = 0;
+    await postTo(crossTenantRequest, 'USYNTH_A_SECTION');
+    expect(probeCount).toBe(configured);
+
+    // Nonexistent — same probe count.
+    probeCount = 0;
+    const nowhere = await postTo(
+      '99999999-9999-9999-9999-999999999999',
+      'USYNTH_A_SECTION',
+    );
+    expect(probeCount).toBe(configured);
+    const nowhereBody = (await nowhere.json()) as Record<string, unknown>;
+    delete nowhereBody.request_id;
+    expect(nowhereBody).toEqual({ ok: false, error: 'request_not_found' });
+
+    // Malformed (non-uuid) — same probe count, same wire shape.
+    probeCount = 0;
+    const malformed = await postTo('not-a-uuid', 'USYNTH_A_SECTION');
+    expect(probeCount).toBe(configured);
+    const malformedBody = (await malformed.json()) as Record<string, unknown>;
+    delete malformedBody.request_id;
+    expect(malformedBody).toEqual(nowhereBody);
+  });
+
+  it('a no-match id runs the decoy sequence under the first configured tenant', async () => {
+    decoyQueries = [];
+    probeCount = 0;
+    const res = await postTo(
+      '99999999-9999-9999-9999-999999999999',
+      'USYNTH_A_SECTION',
+    );
+    const body = (await res.json()) as { request_id: string };
+
+    // The decoy ran the real path's work shape: tenant context set,
+    // request lookup, actor identity lookup — all absent for the
+    // not-found shape before PL-257.
+    const joined = decoyQueries.join('\n');
+    expect(joined).toContain('app.tenant_id');
+    expect(joined).toMatch(/from\s+pickup_requests/i);
+    expect(joined).toMatch(/from\s+staff_identities/i);
+
+    // And its boundary audit lands under the decoy tenant.
+    const audits = await withTenant(
+      probeServer.db.appPool,
+      TENANT_A,
+      async (client) => {
+        const r = await client.query<{ outcome: string; tenant_id: string }>(
+          `select outcome, tenant_id from mcp_audit where request_id = $1`,
+          [body.request_id],
+        );
+        return r.rows;
+      },
+    );
+    expect(audits.length).toBe(1);
+    expect(audits[0]!.outcome).toBe('slack_not_found');
+    expect(audits[0]!.tenant_id).toBe(TENANT_A);
+  });
+});

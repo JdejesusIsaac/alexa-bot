@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { upsertStudent } from '../src/repositories/students.js';
+import { insertStaffIdentity } from '../src/repositories/staff-identities.js';
 import {
   createPickupRequest,
   transitionPickupRequest,
@@ -41,19 +42,20 @@ const SERVICE_DATE = '2030-03-15';
 
 let db: TestDb;
 let studentA: string;
+// The approver identities the decisions resolve through (PL-251).
+const identityIds: Record<string, string> = {};
+const LEADER_1 = 'leader-1@synthetic.test';
+const LEADER_2 = 'leader-2@synthetic.test';
 
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-  } finally {
-    owner.release();
-  }
+  // FORCE RLS binds the owner too — each tenant row enters under its
+  // own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
 
   studentA = await withTenant(db.appPool, TENANT_A, async (client) => {
     const s = await upsertStudent(client, {
@@ -62,6 +64,23 @@ beforeAll(async () => {
       section: '101',
     });
     return s.id;
+  });
+
+  await withTenant(db.appPool, TENANT_A, async (client) => {
+    identityIds[LEADER_1] = (
+      await insertStaffIdentity(client, {
+        slackUserId: 'U_METRICS_1',
+        subject: LEADER_1,
+        role: 'staff',
+      })
+    ).id;
+    identityIds[LEADER_2] = (
+      await insertStaffIdentity(client, {
+        slackUserId: 'U_METRICS_2',
+        subject: LEADER_2,
+        role: 'staff',
+      })
+    ).id;
   });
 
   /** Create + route a request; returns its id. */
@@ -79,6 +98,7 @@ beforeAll(async () => {
         action: 'route',
         actor: 'intake-coordinator',
         escalateAt: new Date('2030-03-15T18:30:00Z'),
+        assignedApproverId: identityIds[LEADER_1]!,
       });
       expect(routed.ok).toBe(true);
       return request.id;
@@ -90,14 +110,21 @@ beforeAll(async () => {
     action: 'approve' | 'deny' | 'escalate' | 'expire',
     actor: string,
   ) => {
+    const isDecision = action === 'approve' || action === 'deny';
     const result = await withTenant(db.appPool, TENANT_A, async (client) =>
       transitionPickupRequest(client, {
         requestId,
         action,
         actor,
         ...(action === 'escalate'
-          ? { escalateAt: new Date('2030-03-15T18:40:00Z') }
+          ? {
+              escalateAt: new Date('2030-03-15T18:40:00Z'),
+              assignedApproverId: identityIds[LEADER_2]!,
+            }
           : {}),
+        // Decisions carry the resolved identity — the chokepoint
+        // compares it to the row's current assignee (PL-251).
+        ...(isDecision ? { actorIdentityId: identityIds[actor]! } : {}),
       }),
     );
     expect(result.ok).toBe(true);
@@ -105,29 +132,29 @@ beforeAll(async () => {
 
   // R1: decided by leader-1 in 10 minutes.
   const r1 = await makeRouted();
-  await drive(r1, 'approve', 'leader-1@synthetic.test');
-  // R2: escalated once, then denied by leader-2 in 20 minutes.
+  await drive(r1, 'approve', LEADER_1);
+  // R2: escalated once (reassigned to leader-2), then denied in 20 minutes.
   const r2 = await makeRouted();
   await drive(r2, 'escalate', 'worker');
-  await drive(r2, 'deny', 'leader-2@synthetic.test');
+  await drive(r2, 'deny', LEADER_2);
   // R3: decided by leader-1 in 30 minutes.
   const r3 = await makeRouted();
-  await drive(r3, 'approve', 'leader-1@synthetic.test');
+  await drive(r3, 'approve', LEADER_1);
   // R4: never decided — expired.
   const r4 = await makeRouted();
   await drive(r4, 'expire', 'worker');
 
   // Construct the exact timings: routed at ROUTED_AT, decided at
-  // ROUTED_AT + delta. Owner-role backdating of the synthetic fixtures.
-  const backdatingOwner = await db.ownerPool.connect();
-  try {
+  // ROUTED_AT + delta. Owner-role backdating of the synthetic fixtures —
+  // under tenant A's context, since FORCE RLS binds the owner (B-12).
+  await withTenant(db.ownerPool, TENANT_A, async (owner) => {
     const backdate = async (requestId: string, decisionMinutes: number) => {
-      await backdatingOwner.query(
+      await owner.query(
         `update pickup_request_events set created_at = $1
          where request_id = $2 and event_type = 'routed'`,
         [ROUTED_AT, requestId],
       );
-      await backdatingOwner.query(
+      await owner.query(
         `update pickup_requests set decided_at = $1 where id = $2`,
         [new Date(ROUTED_AT.getTime() + decisionMinutes * 60_000), requestId],
       );
@@ -135,9 +162,7 @@ beforeAll(async () => {
     await backdate(r1, 10);
     await backdate(r2, 20);
     await backdate(r3, 30);
-  } finally {
-    backdatingOwner.release();
-  }
+  });
 });
 
 afterAll(async () => {

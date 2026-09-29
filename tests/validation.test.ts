@@ -123,16 +123,14 @@ describe('PL-006 · T-06: dirty rows quarantine, clean rows survive', () => {
       ['T008', 'Grace Test', '101', 'Present', '', '', '', '', 'FALSE', 'TRUE'],
     ];
 
-    // Set up tenant and mappings in the DB
-    const owner = await db.ownerPool.connect();
-    try {
+    // Set up tenant and mappings in the DB — the owner insert runs
+    // under tenant A's own context because FORCE RLS binds it too (B-12).
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
       await owner.query(
         `insert into tenants (id, name) values ($1, $2) on conflict do nothing`,
         [TENANT_A, 'Test Campus'],
       );
-    } finally {
-      owner.release();
-    }
+    });
 
     const mappings = makeMappings();
     const derivationRules = makeDerivationRules();

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import {
   insertApproverRoutingRule,
@@ -47,35 +47,33 @@ let bInSection: string; // tenant B, section code colliding with A's
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
+  // FORCE RLS binds the owner too — the tenants and students insert
+  // under each tenant's own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
 
-    const insertStudent = async (
-      tenantId: string,
-      ref: string,
-      section: string | null,
-      grade: string | null,
-    ): Promise<string> => {
+  const insertStudent = async (
+    tenantId: string,
+    ref: string,
+    section: string | null,
+    grade: string | null,
+  ): Promise<string> =>
+    withTenant(db.ownerPool, tenantId, async (owner) => {
       const res = await owner.query<{ id: string }>(
         `insert into students (tenant_id, student_ref, student_name, section, grade)
          values ($1, $2, $3, $4, $5) returning id`,
         [tenantId, ref, 'Routing Test Scholar', section, grade],
       );
       return res.rows[0]!.id;
-    };
+    });
 
-    secAndGrade = await insertStudent(TENANT_A, 'R-001', '101', '5');
-    gradeOnly = await insertStudent(TENANT_A, 'R-002', '999', '5');
-    nothingButDefault = await insertStudent(TENANT_A, 'R-003', '999', '9');
-    nullGradeInSection = await insertStudent(TENANT_A, 'R-004', '101', null);
-    bInSection = await insertStudent(TENANT_B, 'R-101', '101', null);
-  } finally {
-    owner.release();
-  }
+  secAndGrade = await insertStudent(TENANT_A, 'R-001', '101', '5');
+  gradeOnly = await insertStudent(TENANT_A, 'R-002', '999', '5');
+  nothingButDefault = await insertStudent(TENANT_A, 'R-003', '999', '9');
+  nullGradeInSection = await insertStudent(TENANT_A, 'R-004', '101', null);
+  bInSection = await insertStudent(TENANT_B, 'R-101', '101', null);
 
   // Approvers are registered staff (PL-205): the composite FK on
   // approver_id refuses to name an identity that does not exist, so the

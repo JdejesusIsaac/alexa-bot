@@ -23,6 +23,11 @@ import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 
 const SENTINEL = 'SENTINEL-create-intake-detail-9c2f';
 const PICKUP_AT = '2030-03-15T18:30:00.000Z';
+// A001 is section 101 → assigned approver is this staff-identity subject
+// (PL-251: only the assignee may decide; callers resolve through
+// staff_identities, so decision callers carry a mapped subject).
+const ASSIGNEE_A = 'lead-alpha-section@synthetic.test';
+const ASSIGNEE_B = 'lead-bravo-section@synthetic.test';
 
 let server: TestMcpServer;
 let client: McpTestClient;
@@ -193,7 +198,7 @@ describe('PL-208 · T-70: decide_pickup_request', () => {
   it('records the decision under the caller’s subject, with the note on the event', async () => {
     const requestId = await createRoutedRequest();
 
-    const res = await callAs('leader-deciding', 'decide_pickup_request', {
+    const res = await callAs(ASSIGNEE_A, 'decide_pickup_request', {
       request_id: requestId,
       decision: 'approve',
       note: 'Confirmed with the front office.',
@@ -216,7 +221,7 @@ describe('PL-208 · T-70: decide_pickup_request', () => {
     const row = await withTenant(server.db.appPool, TENANT_A, async (c) =>
       findPickupRequestById(c, requestId),
     );
-    expect(row!.decided_by).toBe('leader-deciding');
+    expect(row!.decided_by).toBe(ASSIGNEE_A);
     expect(JSON.stringify(result)).not.toContain('Confirmed with the front office.');
 
     const events = await withTenant(server.db.appPool, TENANT_A, async (c) => {
@@ -227,12 +232,12 @@ describe('PL-208 · T-70: decide_pickup_request', () => {
       return r.rows;
     });
     expect(events).toHaveLength(1);
-    expect(events[0]!.actor).toBe('leader-deciding');
+    expect(events[0]!.actor).toBe(ASSIGNEE_A);
     expect(events[0]!.note).toBe('Confirmed with the front office.');
   });
 
   it('an unknown or foreign-tenant request id is not_found, carrying nothing but kind and reason', async () => {
-    const res = await callAs('leader-deciding', 'decide_pickup_request', {
+    const res = await callAs(ASSIGNEE_A, 'decide_pickup_request', {
       request_id: '99999999-9999-9999-9999-999999999999',
       decision: 'approve',
     });
@@ -241,10 +246,12 @@ describe('PL-208 · T-70: decide_pickup_request', () => {
     expect(result?.isError).toBe(true);
     expect(result?.structuredContent).toEqual({ kind: 'refusal', reason: 'not_found' });
 
-    // A request that exists in another tenant is equally not_found.
+    // A request that exists in another tenant is equally not_found —
+    // under a subject mapped in B, so the identity resolves and only
+    // the request is invisible.
     const foreignId = await createRoutedRequest();
     const foreign = await callAs(
-      'leader-deciding',
+      ASSIGNEE_B,
       'decide_pickup_request',
       {
         request_id: foreignId,
@@ -262,12 +269,12 @@ describe('PL-208 · T-70: decide_pickup_request', () => {
 
   it('a conflicting re-decision is an illegal_transition refusal, never a silent overwrite', async () => {
     const requestId = await createRoutedRequest();
-    await callAs('leader-deciding', 'decide_pickup_request', {
+    await callAs(ASSIGNEE_A, 'decide_pickup_request', {
       request_id: requestId,
       decision: 'approve',
     });
 
-    const res = await callAs('leader-deciding', 'decide_pickup_request', {
+    const res = await callAs(ASSIGNEE_A, 'decide_pickup_request', {
       request_id: requestId,
       decision: 'deny',
     });

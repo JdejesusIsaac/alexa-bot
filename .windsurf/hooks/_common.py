@@ -162,16 +162,66 @@ def current_phase(tid=None):
     return _read_phase(STATE_FILE)
 
 
+def conversation_phase(tid):
+    """This conversation's OWN phase file only — no global fallback.
+
+    Evaluator isolation (PL-271) allows artifact reads on this value
+    alone: a legacy global file saying 'implementation' must never
+    vouch for a conversation that never declared a phase. That was the
+    Sprint 3.1 breach — the evaluator's fresh conversation had no
+    phase of its own while the global file said 'implementation', so
+    isolation held by nothing. Default closed.
+    """
+    if not tid:
+        return None
+    return _read_phase(_phase_file(tid))
+
+
+def mark_conversation(tid):
+    """Record which conversation is running, for the receipt to bind.
+
+    The isolation hook fires on every read and command, so the marker
+    always names the conversation whose tool call is in flight —
+    including the `bash scripts/preflight.sh` call itself, which is how
+    the receipt resolves THIS conversation's phase without trusting a
+    foreign phase.* file (F-7). Never raises, never blocks.
+    """
+    if not tid:
+        return
+    ensure_state_dir()
+    try:
+        with open(
+            os.path.join(STATE_DIR, "last-trajectory"), "w", encoding="utf-8"
+        ) as f:
+            f.write(str(tid) + "\n")
+    except OSError:
+        pass
+
+
 def _sprint_num(path):
-    m = re.search(r"sprint-(\d+)/", path.replace("\\", "/"))
-    return int(m.group(1)) if m else -1
+    m = re.search(r"sprint-(\d+(?:\.\d+)?)/", path.replace("\\", "/"))
+    return float(m.group(1)) if m else -1.0
+
+
+def _is_draft(path):
+    """Drafted-ahead sprint folders self-mark 'STATUS: DRAFT' near the top.
+    A draft is not the live sprint even though its number sorts highest."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            return "STATUS: DRAFT" in f.read(4096)
+    except OSError:
+        return False
 
 
 def artifact(kind):
-    """Path to the live artifact of `kind`: the highest-numbered sprint-N/ copy
-    if any exist, else the canonical v3 path. Returns None when neither exists."""
+    """Path to the live artifact of `kind`: the highest-numbered non-draft
+    sprint-*/ copy if any exist, else the canonical v3 path. Returns None
+    when neither exists."""
     base = os.path.basename(ARTIFACTS[kind])
-    candidates = sorted(glob.glob("sprint-*/" + base), key=_sprint_num)
+    candidates = sorted(
+        (c for c in glob.glob("sprint-*/" + base) if not _is_draft(c)),
+        key=_sprint_num,
+    )
     if candidates:
         return candidates[-1]
     canonical = ARTIFACTS[kind]
@@ -182,7 +232,7 @@ def artifact_for(fp, kind):
     """Artifact of `kind` in the same sprint folder as `fp`, when fp is inside
     one; else the live artifact (latest sprint, canonical fallback).
     sprint-3/plan.md gates on sprint-3/research.md, not the newest sprint's."""
-    m = re.search(r"(^|/)(sprint-\d+)/", (fp or "").replace("\\", "/"))
+    m = re.search(r"(^|/)(sprint-\d+(?:\.\d+)?)/", (fp or "").replace("\\", "/"))
     if m:
         same = m.group(2) + "/" + os.path.basename(ARTIFACTS[kind])
         if os.path.exists(same):
@@ -196,7 +246,9 @@ def is_artifact(fp, kind):
     base = os.path.basename(ARTIFACTS[kind])
     if fp.endswith(ARTIFACTS[kind]):
         return True
-    return bool(re.search(r"(^|/)sprint-\d+/" + re.escape(base) + "$", fp))
+    return bool(
+        re.search(r"(^|/)sprint-\d+(?:\.\d+)?/" + re.escape(base) + "$", fp)
+    )
 
 
 def artifact_kind(fp):

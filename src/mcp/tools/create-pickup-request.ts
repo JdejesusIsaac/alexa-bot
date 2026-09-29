@@ -9,9 +9,17 @@
  * worker exists (PL-204), the clock is data; the worker owns ladder
  * semantics.
  *
- * The notification (PL-206) is deliberately NOT wired here — its
- * callers are the worker and the Slack flow, and no Slack credentials
- * exist yet.
+ * The notification (PL-206) fires here on successful route — DM +
+ * visibility thread — through `deps.pickupNotifier` when Slack is
+ * configured (PL-252). A send failure never fails the tool call; no
+ * configured notifier means the request still routes, logged.
+ *
+ * The level-0 clock (PL-253): with a written ladder the first deadline
+ * is `min(pickup_at, now + initial_minutes)` — escalation starts before
+ * the parent is due. Without one the request still routes with
+ * `escalate_at = pickup_at` and an `initial_clock_unconfigured` warning
+ * — an honest posture: without a written ladder no worker can run, so
+ * the clock is inert data either way.
  *
  * Args carry no tenant (Rule 7 — derived from the token) and the
  * response carries exactly the declared minimum set on success and
@@ -97,7 +105,10 @@ export async function handleCreatePickupRequest(
     }
 
     // 3. Create the draft, then route it: assigned to the named
-    //    approver, clock set to the pickup time.
+    //    approver, clock set to the earlier of the pickup time and
+    //    `now + initial_minutes` when a written ladder is configured
+    //    (PL-253) — the first rung fires while there is still time to
+    //    decide, not when the parent is already at security.
     const request = await createPickupRequest(client, {
       serviceDate: todayServiceDate(),
       studentId: student.id,
@@ -107,11 +118,20 @@ export async function handleCreatePickupRequest(
       intakeChannel: 'coordinator',
     });
 
+    const initialMinutes =
+      deps.escalationLadders?.[identity.tenantId]?.initialMinutes;
+    const escalateAt =
+      initialMinutes !== undefined
+        ? new Date(
+            Math.min(pickupAt.getTime(), Date.now() + initialMinutes * 60_000),
+          )
+        : pickupAt;
+
     const routed = await transitionPickupRequest(client, {
       requestId: request.id,
       action: 'route',
       actor: identity.sub,
-      escalateAt: pickupAt,
+      escalateAt,
       assignedApproverId: resolution.resolution.approverId,
     });
     if (!routed.ok) {
@@ -147,6 +167,43 @@ export async function handleCreatePickupRequest(
       isError: true,
       structuredContent: { kind: 'refusal', reason: result.reason },
     };
+  }
+
+  // The notification is a side effect, never a gate (PL-252): it runs
+  // after the route committed, a failed or thrown send is a log line,
+  // and the tool call's outcome is unaffected.
+  if (deps.pickupNotifier !== undefined) {
+    try {
+      const notifyResult = await withTenant(deps.appPool, identity.tenantId, (client) =>
+        deps.pickupNotifier!.notifyAssigned(client, result.request.id),
+      );
+      if (!notifyResult.ok) {
+        deps.logger.warn({
+          msg: 'pickup_notification_failed',
+          tenant_id: identity.tenantId,
+          request_id: meta.requestId,
+          code: notifyResult.code,
+        });
+      }
+    } catch {
+      // The exception's message is not ours to log — it can carry the
+      // one string the payload discipline exists to keep out of logs.
+      deps.logger.warn({
+        msg: 'pickup_notification_failed',
+        tenant_id: identity.tenantId,
+        request_id: meta.requestId,
+        code: 'notifier_exception',
+      });
+    }
+  }
+
+  if (deps.escalationLadders?.[identity.tenantId] === undefined) {
+    deps.logger.warn({
+      msg: 'initial_clock_unconfigured',
+      tenant_id: identity.tenantId,
+      request_id: meta.requestId,
+      detail: 'no escalation ladder configured — level-0 clock is the pickup time',
+    });
   }
 
   deps.logger.info({

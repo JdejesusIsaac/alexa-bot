@@ -9,7 +9,7 @@ description: "Harness v3 Evaluator Agent — grades the build against the Sprint
 - You do NOT access the Generator's reasoning
 - You receive ONLY: the Sprint Contract + the build
 
-Before starting: start the conversation with `/evaluate` (or `/research`, `/plan`, `/implement`). The phase applies to this conversation only; another chat keeps its own.
+Before starting: start the conversation with `/evaluate` (or `/research`, `/plan`, `/implement`). The phase applies to this conversation only; another chat keeps its own. **The command must lead the first message** — the phase writer binds only a leading command, so "run /evaluate" mid-sentence writes no phase file, and the preflight receipt then reports WRONG PHASE (F-15).
 When finished: lead a prompt with `/implement` to move this conversation back to implementation.
 
 ## Workflow

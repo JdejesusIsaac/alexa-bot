@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { upsertStudent } from '../src/repositories/students.js';
 import {
@@ -52,15 +52,12 @@ let bApproverIdentityId: string;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-  } finally {
-    owner.release();
-  }
+  // FORCE RLS binds the owner too — each tenant row enters under its
+  // own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
 
   await withTenant(db.appPool, TENANT_A, async (client) => {
     const approver = await insertStaffIdentity(client, {

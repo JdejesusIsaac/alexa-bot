@@ -4,13 +4,13 @@
 
 **Sprint:** 3 — The Approval Path
 **Started:** 2026-09-20
-**Status:** 🟡 In progress — **11 of 13 tasks ✅.** PL-201, PL-212, PL-202, PL-203, PL-205, PL-206, PL-207, PL-208, PL-210, PL-211, PL-204 ✅ (T-50…T-73 written and passing for every shipped task; full suite 312/312). **Remaining: PL-209 (Aircall probe) and PL-213 (pilot).** PL-204 is built under the ladder-as-required-config option — it cannot run a real ladder until P2 is recorded, by design.
+**Status:** 🟡 Closed by repair — **9 of 13 tasks ✅; PL-206 and PL-207 reverted to 🔵** (code-complete, AC unmet — repaired in Sprint 3.1). PL-209 (Aircall probe) and PL-213 (pilot) remain human-gated. Evaluated ≈69% weighted vs 90%; see `sprint-3.1/` for the repair.
 
 ---
 
 ## Current state
 
-**Next action:** **Two tasks remain, both gated on humans.** (1) **PL-209 — the Aircall capability probe**: credentials + observation of what the API actually exposes (the PL-101 lesson; never documentation). A "webhooks unreliable" result is valid and shrinks PL-209 to a coordinator form. (2) **PL-213 — the campus pilot**, which needs PL-209 landed and **P2 recorded** (the worker is built but structurally cannot run a real ladder until the written decision exists — point `ESCALATION_LADDER_FILE` at it when it does). (3) **P1 measurement week** — E2's baseline. (4) **Q6** — open now, not at Sprint 5 planning. (5) **The evaluator, when the sprint closes**: fresh conversation, `/evaluate`, a different model family — and everything flagged during design (the AD-42 boundary point, the T-66 timing requirement, the startup-refusal design) is generator-side context, not inherited findings. It must reach its own, or the independence is nominal.
+**Next action:** **Two tasks remain, both gated on humans.** (1) **PL-209 — the Aircall capability probe**: credentials + observation of what the API actually exposes (the PL-101 lesson; never documentation). A "webhooks unreliable" result is valid and shrinks PL-209 to a coordinator form. (2) **PL-213 — the campus pilot**, which needs PL-209 landed and **P2 recorded** (the worker is built but structurally cannot run a real ladder until the written decision exists — point `ESCALATION_LADDER_DIR` at it when it does — see `sprint-3.1/research.md` for the per-tenant ladder change). (3) **P1 measurement week** — E2's baseline. (4) **Q6** — open now, not at Sprint 5 planning. (5) **The evaluator, when the sprint closes**: fresh conversation, `/evaluate`, a different model family — and everything flagged during design (the AD-42 boundary point, the T-66 timing requirement, the startup-refusal design) is generator-side context, not inherited findings. It must reach its own, or the independence is nominal.
 
 **Blocked on:** P2 blocks PL-204 (escalation ladder). PL-209 is blocked pending the Aircall capability probe. **P3 is resolved** (product default, Session 3) — PL-202 and PL-210 are unblocked.
 
@@ -67,8 +67,8 @@ _At the 10-line cap, prune the oldest code-specific entries first; they remain i
 | PL-203 | Approver routing resolver               | ✅     | T-58, T-59 passing. Most-specific-wins (section > grade > default), total, deterministic; totality fails loudly at seed (assert wired into `npm run seed`) |
 | PL-204 | Escalation worker                       | ✅     | T-60…T-63 passing (11 tests). Built under the ladder-as-required-config option: no default, refuses to start without a written ladder (naming the file), fixture ladder is obviously fake (1/2-min FIXTURE_VP rungs). **Cannot run a real ladder until P2 lands — by design** |
 | PL-205 | `staff_identities` + Slack actor mapping | ✅     | T-64, T-67 passing. Unmapped actor → typed refusal, audited, no state change; decisions recorded under the subject, never the slack id. T-65/T-66 wait on PL-207's endpoint |
-| PL-206 | Slack notification surface (outbound)   | ✅     | T-68 passing (sentinel adversarial, 7 tests). Per P3: no reason at all — name, time, link; the payload builder never sees the request row |
-| PL-207 | Slack interaction endpoint (inbound)    | ✅     | T-65, T-66 passing (7 tests). Real verification path (synthetic secret, never logged), replay cache, AD-42 boundary auditing, cross-tenant indistinguishable in message/code/timing (200×2) |
+| PL-206 | Slack notification surface (outbound)   | 🔵     | T-68 passing, but Sprint 3.1 eval found `sendPickupNotifications` had **no caller in `src/`** — code-complete, AC unmet (repaired in Sprint 3.1 PL-252) |
+| PL-207 | Slack interaction endpoint (inbound)    | 🔵     | T-65/T-66 passing, but Sprint 3.1 eval found no assignee authorization and a SECURITY DEFINER tenant-returning oracle — code-complete, AC unmet (repaired in Sprint 3.1 PL-251/PL-256/PL-257) |
 | PL-208 | MCP tools: request lifecycle            | ✅     | T-70 passing (9 tests). Three tools, disjoint descriptions, exactly the minimum sets on success and refusal; registry regenerated at 2.1.0 |
 | PL-209 | Aircall intake webhook                  | ⬜     | **Probe first** (research.md §Spike Results). A "webhooks unreliable" result shrinks this to a form |
 | PL-210 | Disclosure extension                    | ✅     | T-69 passing. Sprint 3 fields in FIELD_CLEARANCE (`reason_detail` never per P3); `reason_code` demoted to never (Sprint 2 review); TOOL_MINIMUM_FIELDS declared for the three PL-208 tools |
@@ -92,7 +92,7 @@ Sprint 1's T-01…T-23 and Sprint 2's T-24…T-49 continue to run every sprint. 
 | T-50…T-52 roster grain       | 3       | 3       |
 | T-53…T-57 request lifecycle  | 5       | 5       |
 | T-58…T-59 routing            | 2       | 2       |
-| T-60…T-63 escalation         | 4       | 4       |
+| T-60…T-63 escalation         | 4       | 4 — T-63 partial: recorded-policy assertion is P2-gated (fixture-drift legs green); stated honestly in sprint-3.1/test.md |
 | T-64…T-67 actor + inbound auth | 4     | 4       |
 | T-68…T-70 disclosure         | 3     | 3       |
 | T-71…T-73 intake + ops       | 2 (T-72, T-73) | 2     |

@@ -18,6 +18,9 @@ import { McpTestClient } from './helpers/mcp-client.js';
 import { findMcpAuditEntries } from '../src/repositories/mcp-audit.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { TENANT_A } from '../src/fixtures/synthetic-data.js';
+// T-74: one shared copy — a percentile reading the wrong index fails
+// everywhere at once, not in whichever file copied it.
+import { median, percentile } from './helpers/stats.js';
 
 let server: TestMcpServer;
 let client: McpTestClient;
@@ -441,12 +444,4 @@ function refusalOf(
   return body.result.structuredContent?.reason ?? null;
 }
 
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]!;
-}
 
-function percentile(values: number[], p: number): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length * p)]!;
-}

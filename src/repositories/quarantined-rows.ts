@@ -65,20 +65,6 @@ export async function findBySync(
 }
 
 /**
- * Count quarantined rows for a sync.
- */
-export async function countQuarantined(
-  client: PoolClient,
-  syncId: string,
-): Promise<number> {
-  const res = await client.query<{ count: string }>(
-    `select count(*)::text as count from quarantined_rows where sync_id = $1`,
-    [syncId],
-  );
-  return parseInt(res.rows[0]!.count, 10);
-}
-
-/**
  * Quarantine summary with reasons for the current tenant's most recent
  * sync (PL-109). Admins see counts and reasons — never row contents,
  * which may include unvalidated free text.

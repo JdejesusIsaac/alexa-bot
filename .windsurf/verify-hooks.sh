@@ -4,6 +4,12 @@
 # v2 checks the STREAM, not just the exit code: on exit 2 the Cascade agent
 # sees stderr, so a block case also asserts stderr is non-empty. v1 printed
 # reasons to stdout — the block worked and the agent was never told why.
+#
+# v3 (Sprint AUTH, PL-271) adds the eleventh case: isolation is default-ON.
+# A conversation with no phase of its own must be blocked from progress.md
+# and smoke.log even while the legacy global file says 'implementation' —
+# the exact configuration of the Sprint 3.1 evaluation breach. Restoring the
+# old allow-unless-'evaluation' logic fails this case, which is the point.
 H=.windsurf/hooks
 S=.windsurf/state
 ERR=$(mktemp)
@@ -12,7 +18,11 @@ pass=0; fail=0
 # Per-conversation phase files written/consumed by the tests below.
 TID_EVAL=verify-hooks-eval
 TID_IMPL=verify-hooks-impl
-cleanup() { rm -f "$ERR" "$S/phase.$TID_EVAL" "$S/phase.$TID_IMPL"; }
+# Deliberately never given a phase file of its own.
+TID_UNPHASED=verify-hooks-unphased
+cleanup() {
+  rm -f "$ERR" "$S/phase.$TID_EVAL" "$S/phase.$TID_IMPL" "$S/phase.$TID_UNPHASED" "$S/phase.unphased-bak" "$S/last-trajectory"
+}
 trap cleanup EXIT
 
 check () { # name expected_exit json script [stderr]
@@ -53,6 +63,35 @@ check "read progress.md blocked"      2 '{"trajectory_id":"verify-hooks-eval","t
 check "same read allowed in impl"     0 '{"trajectory_id":"verify-hooks-impl","tool_info":{"file_path":"sprint-3/progress.md"}}' evaluator-isolation.py
 check "cat progress.md blocked"       2 '{"trajectory_id":"verify-hooks-eval","tool_info":{"command_line":"cat sprint-3/progress.md"}}' evaluator-isolation.py stderr
 
+echo "  -- evaluator isolation (default on — PL-271)"
+# The Sprint 3.1 breach as a test: a conversation with no phase of its
+# own, while the legacy global file says implementation, must still be
+# blocked — from progress.md, from smoke.log, and with no trajectory id
+# at all. One case; three invocations. Restoring the old allow-unless-
+# 'evaluation' logic fails it, which is the mutation proof.
+GLOBAL="$S/phase"
+if [ -f "$GLOBAL" ]; then cp "$GLOBAL" "$S/phase.unphased-bak"; fi
+echo implementation > "$GLOBAL"
+UNPHASED_OK=1
+for PAYLOAD in \
+  '{"trajectory_id":"verify-hooks-unphased","tool_info":{"file_path":"sprint-3/progress.md"}}' \
+  '{"trajectory_id":"verify-hooks-unphased","tool_info":{"file_path":"soak/smoke.log"}}' \
+  '{"tool_info":{"file_path":"sprint-3/progress.md"}}' \
+  '{"tool_info":{"command_line":"cat soak/smoke.log"}}'; do
+  echo "$PAYLOAD" | python3 "$H/evaluator-isolation.py" >/dev/null 2>"$ERR"
+  CODE=$?
+  if [ "$CODE" -ne 2 ] || [ ! -s "$ERR" ]; then UNPHASED_OK=0; fi
+done
+if [ "$UNPHASED_OK" -eq 1 ]; then
+  echo "  ok   unphased conversation blocked (progress.md + smoke.log, global says implementation)"
+  pass=$((pass+1))
+else
+  echo "  FAIL unphased conversation reads freely — isolation is not default-on"
+  sed 's/^/       /' "$ERR"
+  fail=$((fail+1))
+fi
+if [ -f "$S/phase.unphased-bak" ]; then mv "$S/phase.unphased-bak" "$GLOBAL"; else rm -f "$GLOBAL"; fi
+
 echo "  -- mcp phase router"
 if [ -f .windsurf/mcp-phases.json ]; then
   check "unassigned server blocked"   2 '{"trajectory_id":"verify-hooks-eval","tool_info":{"mcp_server_name":"conway"}}' mcp-phase-router.py stderr
@@ -61,5 +100,5 @@ else
 fi
 
 echo "  ---"
-echo "  $pass passed, $fail failed"
+echo "  $pass passed, $fail failed (expect 11 cases)"
 [ "$fail" -eq 0 ] || exit 1

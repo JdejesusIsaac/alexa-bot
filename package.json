@@ -20,7 +20,7 @@
     "seed": "tsx --env-file-if-exists=.env src/db/seed.ts",
     "serve": "tsx --env-file-if-exists=.env src/main.ts",
     "soak:day": "tsx --env-file-if-exists=.env src/soak/soak-day.ts",
-    "verify": "npm run typecheck && npm run lint && npm run test",
+    "verify": "npm run typecheck && npm run lint && node scripts/check-dead-exports.mjs && npm run test",
     "worker": "tsx --env-file-if-exists=.env src/sync/escalation-worker.ts"
   },
   "dependencies": {

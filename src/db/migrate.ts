@@ -10,8 +10,10 @@ import { loadConfig } from '../config.js';
  * ESLint override is scoped to it by name.
  *
  * Runs as the OWNER role (DATABASE_URL), never the application role. The
- * application role must not own these tables: owners bypass RLS silently,
- * which would make the entire isolation gate vacuous (AD-11, T-05).
+ * application role must not own these tables: an owner can disable or
+ * drop the RLS policies outright — and bypasses them silently wherever
+ * FORCE is missing — which would make the isolation gate vacuous
+ * (AD-11, T-05).
  *
  * T-17 requires this to run clean from an empty database with no manual
  * steps, so every migration is applied inside a transaction and recorded.

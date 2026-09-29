@@ -2,9 +2,9 @@
 
 > **Read this first, every session.**
 
-> **STATUS: DRAFT.** Drafted 2026-09-20, during Sprint 3, following the AD-43 restructure that returned Alexa+ to the roadmap. Sprint 3 has not run. Re-issue as rev 1 at Sprint 4 open.
+> **Re-issued 2026-09-29 as Sprint 7 (rev 1).** Drafted 2026-09-20 as `sprint-4`; the AUTH repair line (sprints 3.1 / AUTH / 6) ran and closed first. Test IDs renumbered T-74…T-83 → T-92…T-101.
 
-**Sprint 4 scope:** the Alexa+ channel. Publish the existing MCP server as an Alexa+ add-on, **staff-facing first** per AD-8, on a campus that has opted into this surface (T-3).
+**Sprint 7 scope:** the Alexa+ channel. Publish the existing MCP server as an Alexa+ add-on, **staff-facing first** per AD-8, on a campus that has opted into this surface (T-3).
 **Product framing (AD-43):** AllowMe LLC builds the platform. A campus or network adopts it and selects channels. **Alexa+ is the product surface.** Claude Desktop is the staff/admin tool; Aircall is a later add-on capability on the same server, not a competing channel (AD-48).
 
 ---
@@ -13,7 +13,7 @@
 
 Claude's inference and conversational surface, in an Echo, reading a campus's own roster data out of the spreadsheet they already maintain — without a staff member typing anything.
 
-Everything underneath already exists. Sprint 1 built the validated read; Sprint 2 built the OAuth-protected MCP server to Alexa+'s published requirements from the first commit (AD-8); Sprint 3 built the approval spine; Sprint 4 is this sprint. **This sprint is an integration, not a rebuild** — which is the payoff of having built to the spec before needing it.
+Everything underneath already exists. Sprint 1 built the validated read; Sprint 2 built the OAuth-protected MCP server to Alexa+'s published requirements from the first commit (AD-8); Sprint 3 built the approval spine; sprints 3.1–6 repaired it; Sprint 7 is this sprint. **This sprint is an integration, not a rebuild** — which is the payoff of having built to the spec before needing it.
 
 ---
 
@@ -35,7 +35,7 @@ Requirements verified against the live docs rather than the Sprint 2 notes.
 
 **F-22 — The Category SDK does not apply.** Category MCP add-ons support one category: `ride_booking`. Education is not a category. The MCP Toolkit path is the only route, which is what Sprint 2 assumed.
 
-**F-23 — A development stage exists that is not the store.** `alexa-ai deploy` publishes to development stage, testable in the web simulator and on a physical device; `alexa-ai submit` is a separate later step. Integration can be exercised end to end **without any store listing**, using synthetic fixtures. This substantially de-risks the sprint: certification is a Sprint 5 question, not a Sprint 4 blocker.
+**F-23 — A development stage exists that is not the store.** `alexa-ai deploy` publishes to development stage, testable in the web simulator and on a physical device; `alexa-ai submit` is a separate later step. Integration can be exercised end to end **without any store listing**, using synthetic fixtures. This substantially de-risks the sprint: certification is a Sprint 5 question, not a Sprint 7 blocker.
 
 **F-24 — Store listing requirements, when certification does come.** `addon.json` needs `storeListing.distributionCountries`, a privacy policy URL, a terms of use URL, six icon sizes (72, 64, 88, 126, 180, 241), and at least one 600×900 carousel image. Certification additionally requires ≥3 distinct example phrases, accessibility support (VoiceView, Captions, Screen Magnifier, Color Tools), and no high-severity dead ends.
 
@@ -53,7 +53,7 @@ Requirements verified against the live docs rather than the Sprint 2 notes.
 
 **3y — A staff Echo has a listener problem the phone doesn't, even staff-facing.** An Echo in the main office is heard by whoever is in the main office — including waiting parents. AD-17's "cannot un-disclose" applies in full. The mitigation is not verification; it is the **spoken tier**: what may be said aloud is narrower than what a tool may return. This is a new control surface — the projection decides data, the spoken tier decides audibility. (→ AD-46)
 
-**3z — We do not own the model here.** Unlike Sprint 4's phone client, Amazon's model picks tools and fills arguments (§3b). AD-2 is load-bearing again in its original form: disclosure lives in return values, never in prompts, and tool descriptions are the only steering surface.
+**3z — We do not own the model here.** Unlike the phone client (a later capability, AD-48), Amazon's model picks tools and fills arguments (§3b). AD-2 is load-bearing again in its original form: disclosure lives in return values, never in prompts, and tool descriptions are the only steering surface.
 
 **3aa — MCP Apps solve the lobby privacy problem properly.** On an Echo Show, the reason can be *displayed* rather than spoken — §3d, parked since Sprint 2 for want of a device. Under the spoken-tier framing (3y) this stops being a nice-to-have: it is the only mechanism that lets a sensitive field reach the right person without reaching the room. Needs an Echo Show. Scoped as a stretch task, not a dependency.
 
@@ -68,13 +68,13 @@ AD-1 … AD-43 stand. AD-33 is amended at rev 3. New:
 **AD-46** _(draft)_ **The spoken tier is narrower than the returned tier.** On a shared-room device, a field may pass the disclosure projection and still be wrong to say aloud. Two controls, not one: `project()` decides what a tool returns; the spoken tier decides what may be voiced. Where they differ, the field goes to a display surface (3aa) or to a person.
 **AD-48** _(draft)_ **Alexa+ is the product surface; other channels are capabilities on the same server.** The product is an Alexa+ MCP add-on: Claude's inference in an Echo, reading a campus's own roster spreadsheet. Aircall/phone is a later capability exposed by the same MCP server — a tool, not a competing surface — and is descoped from the roadmap until the Alexa+ channel carries both staff and parents. This reverses the interim plan in which the phone was the first parent channel; the reasoning that made the phone attractive (a free first factor, one listener) survives as **the problem Sprint 5 must solve without those advantages** (AD-49, Q6).
 
-**AD-47** _(draft)_ **Alexa+ ships staff-facing first** (AD-8 applied to a new channel). The parent tier on this surface is Sprint 4 and does not ship here. Per AD-8 the staff surface exercises the whole stack against users who can say "that's wrong" — every bug found here is one a parent never hears.
+**AD-47** _(draft)_ **Alexa+ ships staff-facing first** (AD-8 applied to a new channel). The parent tier on this surface is the `sprint-5` draft and does not ship here. Per AD-8 the staff surface exercises the whole stack against users who can say "that's wrong" — every bug found here is one a parent never hears.
 
 ---
 
 ## 5. Stack
 
-Carried. **Sprint 4 additions:** Alexa AI CLI (Node 24+) · `addon-package/addon.json` · a cloudflared-style tunnel for local development · optionally the MCP Apps SDK (`@modelcontextprotocol/ext-apps`) for the stretch display task.
+Carried. **Sprint 7 additions:** Alexa AI CLI (Node 24+) · `addon-package/addon.json` · a cloudflared-style tunnel for local development · optionally the MCP Apps SDK (`@modelcontextprotocol/ext-apps`) for the stretch display task.
 
 ---
 
@@ -96,11 +96,11 @@ Per AD-43, split as in Sprint 3 §6.
 
 Carried 1–22. New:
 
-23. **A service-level token reaching a tool handler or a tenant context** (AD-44) → T-74, T-75
-24. **A field spoken aloud that passed the projection but fails the spoken tier** (AD-46) → T-79
-25. **Alexa restating an earlier turn's data to a different listener in the room** (AD-17 on a shared device) → T-80
-26. **A published tool schema drifting from the reviewed one** (AD-45) → T-82
-27. **Real student data reaching a vendor simulator, device, or console** → T-83
+23. **A service-level token reaching a tool handler or a tenant context** (AD-44) → T-92, T-93
+24. **A field spoken aloud that passed the projection but fails the spoken tier** (AD-46) → T-97
+25. **Alexa restating an earlier turn's data to a different listener in the room** (AD-17 on a shared device) → T-98
+26. **A published tool schema drifting from the reviewed one** (AD-45) → T-100
+27. **Real student data reaching a vendor simulator, device, or console** → T-101
 
 ---
 
@@ -118,13 +118,13 @@ Carried 1–22. New:
 
 ## Spike Results
 
-### PL-301 — Service-scope handshake `SPIKE` (open)
+### PL-301 — Service-scope handshake (decision recorded 2026-09-29 — Go on the documented set; observation deferred to deploy)
 
 **Question:** F-20. Confirm by observation which methods Alexa+ calls with a `client_credentials` token versus a user token, against our actual server — not from the docs table. The PL-101 lesson: two documented "rejections" turned out to be dashboard configuration.
 
-**Method:** deploy to development stage behind a tunnel, register, and read our own `mcp_audit` rows. The audit trail built in Sprint 2 and hardened under AD-42 is exactly the instrument for this — every handshake call lands as a row with its outcome.
+**Outcome — Go, with the observation deferred by construction.** The instrument for this spike is our own `mcp_audit` ledger on a live add-on, and no add-on exists until PL-309 (public deploy) and PL-302 (`alexa-ai deploy` — the CLI is human-gated, P4). The observation cannot run before the thing it observes. The decision: implement the AD-44 service branch against the documented permitted set — `initialize`, `tools/list`, and health checks (`/health` is already unauthenticated) — plus the housekeeping a handshake needs (`ping`, `notifications/*` carry no data), and the spike lands as a **verification pass at first registration**: read the `mcp_audit` rows the real handshake writes and confirm the observed methods match the permitted list. The row audit is already the boundary's habit (AD-42).
 
-**A "tier 1 is called for more than we assumed" outcome is a valid result** and widens AD-44's permitted method list, which must then be re-argued rather than quietly extended.
+**A "tier 1 is called for more than we assumed" outcome is a valid result** — if the audit rows show Alexa+ calling further methods with the service token, AD-44's permitted list is re-argued deliberately, never quietly extended.
 
 ---
 
@@ -133,3 +133,4 @@ Carried 1–22. New:
 | Rev | Date | Change |
 | --- | ---- | ------ |
 | 0 (draft) | 2026-09-20 | Drafted during Sprint 3 after the AD-43 restructure. **Restructured same day: Alexa+ became Sprint 4 (staff-facing) and the product surface (AD-48); the phone channel is demoted to a later capability; the parent tier is Sprint 5.** §2l re-observed against live docs (F-20…F-26), §3w…§3aa, AD-44…AD-47 draft, leak vectors 23–27, Q23–Q26. **F-20 is the sprint's defining finding.** |
+| 1 | 2026-09-29 | Re-issued as `sprint-7` (the folder rename — `_sprint_num` reads highest non-draft). Tests renumbered T-74…T-83 → T-92…T-101. PL-301's spike resolved as a **deferred-by-construction decision**: implement on the documented permitted set, observe `mcp_audit` at first registration. Plan gains PL-309 (Railway public deploy) and PL-310 (app-role provisioning on managed Postgres — Railway's default is a superuser, the B-14 trap). |

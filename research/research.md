@@ -212,6 +212,8 @@ The QuickStart states security and data policy details "will be published in a f
 
 The hazard this must not lose: **superusers bypass RLS silently.** A local dev role is usually a superuser, so a suite that connects as one turns T-01…T-04 green while production leaks — the exact failure `evaluation/test.md` warns about. **T-05 is therefore a blocking precondition, not merely a test:** if the app role is superuser, owns the tables, or lacks `FORCE ROW LEVEL SECURITY`, the run aborts before any other isolation test is trusted. Testcontainers remains a drop-in later if hermeticity or parallelism demands it; it buys isolation, not correctness.
 
+**AD-53 (new — Sprint AUTH, PL-275) — the decision path is one transaction, with transaction-local tenant context.** `withTenantTransaction` wraps the decision's read-check-update on both channels so the row lock holds across the whole sequence (B-2's TOCTOU closed), and the decision UPDATE guards on `assigned_approver_id` as well as `state`. The tenant setting is applied with `set_config(..., true)` — transaction-local, so it cannot outlive the transaction even on rollback: leak vector 4 hardened by construction rather than by a manual reset.
+
 ---
 
 ## 5. Stack (assumed — confirm before PL-001)

@@ -17,8 +17,8 @@
  */
 
 import { z } from 'zod';
-import { withTenant } from '../../db/tenant-context.js';
-import { transitionPickupRequest } from '../../repositories/pickup-requests.js';
+import { withTenantTransaction } from '../../db/tenant-context.js';
+import { decidePickupRequestAsSubject } from '../../services/pickup-decision.js';
 import { project } from '../../disclosure/policy.js';
 import { REFUSAL_COPY, requireRequestMeta, type ToolDeps } from './common.js';
 import type { LookupResult } from './lookup-scholar-status.js';
@@ -66,12 +66,18 @@ export async function handleDecidePickupRequest(
 
   const args = parsed.data;
 
-  const result = await withTenant(deps.appPool, identity.tenantId, async (client) =>
-    transitionPickupRequest(client, {
+  // The token subject is not yet a decider — it resolves through
+  // staff_identities first (PL-251: an unmapped app subject decides
+  // nothing, which is the widened HF5), and the chokepoint then
+  // enforces assignee and self-approval rules. One transaction for the
+  // whole read-check-update (PL-275): the row lock holds across it, so
+  // a concurrent reassignment cannot land between the check and the
+  // UPDATE.
+  const result = await withTenantTransaction(deps.appPool, identity.tenantId, async (client) =>
+    decidePickupRequestAsSubject(client, {
       requestId: args.request_id,
       action: args.decision,
-      actor: identity.sub,
-      channel: 'app',
+      subject: identity.sub,
       ...(args.note !== undefined ? { note: args.note } : {}),
     }),
   );

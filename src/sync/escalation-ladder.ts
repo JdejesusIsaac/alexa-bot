@@ -36,6 +36,13 @@ export interface EscalationRung {
 
 export interface EscalationLadder {
   readonly rungs: readonly EscalationRung[];
+  /**
+   * The level-0 clock (PL-253): the minutes the first named approver
+   * gets before rung 1 fires. Route sets
+   * `escalate_at = min(pickup_at, now + initial_minutes)` — escalation
+   * begins before the parent is due, which is the point of the sprint.
+   */
+  readonly initialMinutes: number;
   /** Where this ladder was loaded from — named in every error. */
   readonly source: string;
 }
@@ -48,6 +55,11 @@ const rungSchema = z.object({
 
 const ladderFileSchema = z.object({
   note: z.string().optional(),
+  /**
+   * The level-0 deadline in minutes (PL-253). Required — the level-0
+   * clock is policy, and policy lives in this file, not in a default.
+   */
+  initial_minutes: z.number().int().positive(),
   rungs: z.array(rungSchema),
 });
 
@@ -93,7 +105,7 @@ export function parseEscalationLadder(rawJson: string, source: string): Escalati
     }
   }
 
-  return { rungs, source };
+  return { rungs, initialMinutes: result.data.initial_minutes, source };
 }
 
 export async function loadEscalationLadder(filePath: string): Promise<EscalationLadder> {
@@ -109,18 +121,71 @@ export async function loadEscalationLadder(filePath: string): Promise<Escalation
 }
 
 /**
- * The worker's boot path: ESCALATION_LADDER_FILE must point at the
- * written ladder. Unset is not a default — it is a refusal to start,
- * naming the variable and the file that was expected.
+ * Per-tenant ladders (PL-254): `<dir>/<tenant_id>.json` for every
+ * configured tenant. One shared file cannot carry per-tenant approver
+ * subjects — a worker covering two tenants would skip every row of
+ * the second. A tenant missing its file is a boot refusal naming the
+ * tenant and the path it expected; a silently absent ladder is the
+ * same invented-default failure the single-file refusal guards.
  */
-export async function loadEscalationLadderFromEnv(): Promise<EscalationLadder> {
-  const filePath = process.env.ESCALATION_LADDER_FILE;
-  if (filePath === undefined || filePath.length === 0) {
+export async function loadEscalationLaddersFromDir(
+  dir: string,
+  tenantIds: readonly string[],
+): Promise<Map<string, EscalationLadder>> {
+  const ladders = new Map<string, EscalationLadder>();
+  for (const tenantId of tenantIds) {
+    const filePath = `${dir}/${tenantId}.json`;
+    let raw: string;
+    try {
+      raw = await readFile(filePath, 'utf8');
+    } catch {
+      // Missing OR unreadable — both are the same boot refusal, naming
+      // the tenant and the path it expected.
+      throw new Error(
+        `no escalation ladder for tenant ${tenantId} — expected ${filePath}. ` +
+          'Every WORKER_TENANTS entry needs a written ladder; the worker refuses to start.',
+      );
+    }
+    ladders.set(tenantId, parseEscalationLadder(raw, filePath));
+  }
+  return ladders;
+}
+
+/**
+ * Every `*.json` in the directory, keyed by tenant id (the file's
+ * basename) — the web process's level-0 clock map (PL-254): a tenant
+ * with a written ladder gets its own `initial_minutes`; a tenant
+ * without one falls back to `pickup_at` with the unconfigured warning.
+ * Invalid files still refuse loudly, naming the file.
+ */
+export async function loadAllEscalationLaddersFromDir(
+  dir: string,
+): Promise<Record<string, EscalationLadder>> {
+  const { readdir } = await import('node:fs/promises');
+  const entries = await readdir(dir, { withFileTypes: true });
+  const ladders: Record<string, EscalationLadder> = {};
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    const tenantId = entry.name.slice(0, -'.json'.length);
+    ladders[tenantId] = await loadEscalationLadder(`${dir}/${entry.name}`);
+  }
+  return ladders;
+}
+
+/**
+ * The worker's per-tenant boot path (PL-254): ESCALATION_LADDER_DIR +
+ * WORKER_TENANTS. Both unset/missing is a refusal, named.
+ */
+export async function loadEscalationLaddersFromEnv(
+  tenantIds: readonly string[],
+): Promise<Map<string, EscalationLadder>> {
+  const dir = process.env.ESCALATION_LADDER_DIR;
+  if (dir === undefined || dir.length === 0) {
     throw new Error(
-      'ESCALATION_LADDER_FILE is not set — the escalation worker refuses to start. ' +
-        'The ladder is a P2 decision recorded in writing; point ESCALATION_LADDER_FILE at it. ' +
-        'Tests use src/fixtures/escalation-ladder.FIXTURE.json (obviously fake, by design).',
+      'ESCALATION_LADDER_DIR is not set — the escalation worker refuses to start. ' +
+        'Each tenant in WORKER_TENANTS needs <dir>/<tenant_id>.json; ' +
+        'fixture ladders live at src/fixtures/escalation/ (obviously fake, by design).',
     );
   }
-  return loadEscalationLadder(filePath);
+  return loadEscalationLaddersFromDir(dir, tenantIds);
 }

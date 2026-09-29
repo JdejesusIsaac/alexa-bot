@@ -1,0 +1,8 @@
+{
+  "note": "FIXTURE LADDER — synthetic, for tests and local development ONLY (fixture tenant Campus Alpha). A 1-minute level-0 clock and 1- and 2-minute rungs with approvers named FIXTURE_VP and a fixture.test domain: this shape exists so it can never be mistaken for a campus's real escalation policy, because at some point someone will copy it. The real ladder is a P2 decision (principal and VPs), recorded in writing in sprint-3/research.md Spike Results, and loaded via ESCALATION_LADDER_DIR as <dir>/<tenant_id>.json. A worker configured with this file is a worker under test.",
+  "initial_minutes": 1,
+  "rungs": [
+    { "level": 1, "after_minutes": 1, "approver_subject": "FIXTURE_VP_ONE@fixture.test" },
+    { "level": 2, "after_minutes": 2, "approver_subject": "FIXTURE_VP_TWO@fixture.test" }
+  ]
+}

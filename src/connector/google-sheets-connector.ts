@@ -2,8 +2,10 @@
  * Google Sheets connector (PL-005).
  *
  * Read-only access to Google Sheets via the googleapis SDK using a service
- * account. The service account JSON is loaded from the
- * `GOOGLE_SERVICE_ACCOUNT_JSON` environment variable.
+ * account. The service account key is read from a FILE — the path arrives
+ * via `GOOGLE_SERVICE_ACCOUNT_FILE` (e.g. `./secrets/sa.json`, gitignored).
+ * The key itself never sits in an environment variable: a variable listing
+ * is a private key printed to a terminal (F-8).
  *
  * Auth failures, not-found, and network errors surface as typed errors
  * (ConnectorAuthError, ConnectorNotFoundError, ConnectorNetworkError) —
@@ -13,6 +15,7 @@
  * advisor-notes exclusion happen downstream.
  */
 
+import { readFileSync } from 'node:fs';
 import { google } from 'googleapis';
 import { JWT } from 'google-auth-library';
 import type { sheets_v4 } from 'googleapis';
@@ -30,21 +33,34 @@ export class GoogleSheetsConnector implements SheetConnector {
   private readonly sheets: sheets_v4.Sheets;
 
   /**
-   * @param serviceAccountJson - Raw JSON string of the Google service account key
+   * @param serviceAccountFile - Path to the Google service account key file
+   *   (`GOOGLE_SERVICE_ACCOUNT_FILE`). Error messages name the variable and
+   *   the path — never the file's contents, which carry a private key.
    */
-  constructor(serviceAccountJson: string) {
+  constructor(serviceAccountFile: string) {
+    let raw: string;
+    try {
+      raw = readFileSync(serviceAccountFile, 'utf-8');
+    } catch {
+      throw new ConnectorAuthError(
+        `GOOGLE_SERVICE_ACCOUNT_FILE is not readable: ${serviceAccountFile}`,
+      );
+    }
+
     let credentials: Record<string, string>;
     try {
-      credentials = JSON.parse(serviceAccountJson) as Record<string, string>;
+      credentials = JSON.parse(raw) as Record<string, string>;
     } catch {
-      throw new ConnectorAuthError('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON');
+      throw new ConnectorAuthError(
+        `GOOGLE_SERVICE_ACCOUNT_FILE is not valid JSON: ${serviceAccountFile}`,
+      );
     }
 
     const email = credentials.client_email;
     const key = credentials.private_key;
     if (!email || !key) {
       throw new ConnectorAuthError(
-        'GOOGLE_SERVICE_ACCOUNT_JSON is missing client_email or private_key',
+        `GOOGLE_SERVICE_ACCOUNT_FILE is missing client_email or private_key: ${serviceAccountFile}`,
       );
     }
 

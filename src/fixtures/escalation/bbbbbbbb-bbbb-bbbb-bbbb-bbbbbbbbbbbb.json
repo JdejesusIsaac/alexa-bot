@@ -1,0 +1,8 @@
+{
+  "note": "FIXTURE LADDER — synthetic, for tests and local development ONLY (fixture tenant Campus Bravo). Same obviously-fake shape as sibling tenant files: fixture-domain approver subjects, 1-minute clocks. A campus's real ladder is a P2 decision recorded in writing; a worker configured with this file is a worker under test.",
+  "initial_minutes": 1,
+  "rungs": [
+    { "level": 1, "after_minutes": 1, "approver_subject": "FIXTURE_VP_B_ONE@fixture.test" },
+    { "level": 2, "after_minutes": 2, "approver_subject": "FIXTURE_VP_B_TWO@fixture.test" }
+  ]
+}

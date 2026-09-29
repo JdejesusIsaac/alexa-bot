@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../src/connector/fixture-sheet-connector.js';
@@ -53,40 +53,31 @@ let day1SyncId: string;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  // Seed tenants, column mappings, and derivation rules for both tenants.
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-
-    for (const m of TENANT_A_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_A, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const m of TENANT_B_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_B, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const r of TENANT_A_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_A, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-    for (const r of TENANT_B_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_B, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-  } finally {
-    owner.release();
+  // Seed tenants, column mappings, and derivation rules for both
+  // tenants. FORCE RLS binds the owner too — each tenant seeds under
+  // its own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
+  for (const [tenantId, mappings, rules] of [
+    [TENANT_A, TENANT_A_MAPPINGS, TENANT_A_DERIVATION_RULES],
+    [TENANT_B, TENANT_B_MAPPINGS, TENANT_B_DERIVATION_RULES],
+  ] as const) {
+    await withTenant(db.ownerPool, tenantId, async (owner) => {
+      for (const m of mappings) {
+        await owner.query(
+          `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
+          [tenantId, m.sheetHeader, m.canonicalField],
+        );
+      }
+      for (const r of rules) {
+        await owner.query(
+          `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
+          [tenantId, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
+        );
+      }
+    });
   }
 });
 
@@ -149,18 +140,15 @@ describe('PL-201 · T-50: two service dates coexist', () => {
 
   it("yesterday's rows are unchanged and unreachable from a default-scoped read", async () => {
     // A ref that exists on day 1 only — planted before day 2's sync ran,
-    // attached to day 1's sync.
-    const owner = await db.ownerPool.connect();
-    try {
+    // attached to day 1's sync. Owner write under A's context (B-12).
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
       await owner.query(
         `insert into roster_entries
            (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
          values ($1, $2, 'A-OLD-1', 'Prior Day Scholar', '999', 'Present', 'authoritative', 99, $3)`,
         [TENANT_A, DAY_1, day1SyncId],
       );
-    } finally {
-      owner.release();
-    }
+    });
 
     // Unchanged: still readable under its explicit date, content intact.
     const day1Row = await withTenant(db.appPool, TENANT_A, async (client) => {
@@ -268,24 +256,76 @@ describe('PL-201 · T-52 (GATE): dated read is tenant-scoped', () => {
   const HISTORICAL = DAY_1;
 
   beforeAll(async () => {
-    const owner = await db.ownerPool.connect();
-    try {
+    // SELF-SUFFICIENT SEEDING (F-4, PL-283): a gate test must run green
+    // alone — the gate runs filtered, and a false red under a filtered
+    // run is how people learn to ignore it. This block used to depend on
+    // T-50/T-51 having run: the day-1 and today syncs, tenant B's roster,
+    // and the day-1-only scholar. Everything T-52 asserts on is built
+    // here, idempotently — a re-sync is a no-op (T-51's re-sync leg) and
+    // the day-1-only scholar insert is guarded — so a full-file run is
+    // unchanged and `-t "T-52"` builds its own world.
+    // SELF-SUFFICIENT SEEDING (F-4, PL-283): a gate test must run green
+    // alone — the gate runs filtered, and a false red under a filtered
+    // run is how people learn to ignore it. This block used to depend on
+    // T-50/T-51 having run: the day-1 and today syncs, tenant B's roster,
+    // and the day-1-only scholar. Everything T-52 asserts on is built
+    // here, idempotently — a re-sync is a no-op (T-51's re-sync leg) and
+    // the day-1-only scholar insert is guarded — so a full-file run is
+    // unchanged and `-t "T-52"` builds its own world.
+    const connector = new FixtureSheetConnector();
+    const day1 = await runSync(db.appPool, connector, jobFor(TENANT_A), {
+      serviceDate: DAY_1,
+    });
+    expect(day1.kind).toBe('success');
+    const today = await runSync(db.appPool, connector, jobFor(TENANT_A));
+    expect(today.kind).toBe('success');
+    const tenantB = await runSync(db.appPool, connector, jobFor(TENANT_B));
+    expect(tenantB.kind).toBe('success');
+
+    // Owner writes — under each tenant's own context, since FORCE RLS
+    // binds the owner too (B-12).
+    await withTenant(db.ownerPool, TENANT_A, async (owner) => {
+      // The day-1-only scholar, guarded: planted once no matter which
+      // path reached here first (T-50's third leg in a full run, this
+      // block alone under `-t "T-52"`), attached to A's day-1 sync.
+      await owner.query(
+        `insert into roster_entries
+           (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
+         select $1, $2, 'A-OLD-1', 'Prior Day Scholar', '999', 'Present', 'authoritative', 99, s.id
+         from roster_syncs s
+         where s.tenant_id = $1 and s.service_date = $2
+           and not exists (
+             select 1 from roster_entries e
+             where e.tenant_id = $1 and e.service_date = $2 and e.student_ref = 'A-OLD-1'
+           )
+         order by s.started_at desc
+         limit 1`,
+        [TENANT_A, DAY_1],
+      );
+
+      // Tenant A's half of the planted collision on the explicit
+      // historical date.
       const syncA = await owner.query<{ id: string }>(
         `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
          values ($1, $2, now(), now(), 1, 1, 'success') returning id`,
         [TENANT_A, HISTORICAL],
       );
-      const syncB = await owner.query<{ id: string }>(
-        `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
-         values ($1, $2, now(), now(), 1, 1, 'success') returning id`,
-        [TENANT_B, HISTORICAL],
-      );
-
       await owner.query(
         `insert into roster_entries
            (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
          values ($1, $2, $3, 'Kim Alpha', '301', 'Present', 'authoritative', 1, $4)`,
         [TENANT_A, HISTORICAL, COLLIDING_REF, syncA.rows[0]!.id],
+      );
+    });
+
+    // Plant a colliding student_ref on the same explicit historical date
+    // in tenant B — identical ref, different content, so a cross-tenant
+    // row is visible, not just countable.
+    await withTenant(db.ownerPool, TENANT_B, async (owner) => {
+      const syncB = await owner.query<{ id: string }>(
+        `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+         values ($1, $2, now(), now(), 1, 1, 'success') returning id`,
+        [TENANT_B, HISTORICAL],
       );
       await owner.query(
         `insert into roster_entries
@@ -293,9 +333,7 @@ describe('PL-201 · T-52 (GATE): dated read is tenant-scoped', () => {
          values ($1, $2, $3, 'Kim Bravo', '401', 'Present', 'authoritative', 1, $4)`,
         [TENANT_B, HISTORICAL, COLLIDING_REF, syncB.rows[0]!.id],
       );
-    } finally {
-      owner.release();
-    }
+    });
   });
 
   it('a colliding ref on an explicit historical date resolves within the tenant', async () => {

@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import {
   ConnectorAuthError,
   ConnectorError,
@@ -87,21 +90,54 @@ describe('FixtureSheetConnector', () => {
 });
 
 describe('GoogleSheetsConnector', () => {
-  it('throws ConnectorAuthError when service account JSON is invalid', () => {
-    expect(() => new GoogleSheetsConnector('not valid json')).toThrow(ConnectorAuthError);
+  // The credential arrives as a FILE PATH (GOOGLE_SERVICE_ACCOUNT_FILE,
+  // F-8) — never the key in an environment variable. Each leg plants a
+  // synthetic file; the connector reads it. Error messages name the
+  // variable and the path, never the file's contents.
+  let secretsDir: string | undefined;
+
+  afterAll(async () => {
+    if (secretsDir) await rm(secretsDir, { recursive: true, force: true });
   });
 
-  it('throws ConnectorAuthError when service account JSON is empty', () => {
-    expect(() => new GoogleSheetsConnector('')).toThrow(ConnectorAuthError);
+  async function plant(name: string, contents: string): Promise<string> {
+    secretsDir ??= await mkdtemp(path.join(tmpdir(), 'sa-creds-'));
+    const file = path.join(secretsDir, name);
+    await writeFile(file, contents);
+    return file;
+  }
+
+  it('throws ConnectorAuthError when the file does not exist — naming the variable, not contents', () => {
+    expect(
+      () => new GoogleSheetsConnector(path.join(tmpdir(), 'no-such-sa-file.json')),
+    ).toThrow(/GOOGLE_SERVICE_ACCOUNT_FILE is not readable/);
   });
 
-  it('constructs with valid-looking service account JSON', () => {
-    const fakeCreds = JSON.stringify({
-      client_email: 'test@project.iam.gserviceaccount.com',
-      private_key: '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n',
-    });
-    // Construction should succeed — actual auth happens on fetchSheet
-    const connector = new GoogleSheetsConnector(fakeCreds);
+  it('throws ConnectorAuthError when the file holds invalid JSON', async () => {
+    const file = await plant('bad.json', 'not valid json');
+    expect(() => new GoogleSheetsConnector(file)).toThrow(
+      /GOOGLE_SERVICE_ACCOUNT_FILE is not valid JSON/,
+    );
+  });
+
+  it('throws ConnectorAuthError when the file is missing client_email or private_key', async () => {
+    const file = await plant('empty.json', '{}');
+    expect(() => new GoogleSheetsConnector(file)).toThrow(
+      /missing client_email or private_key/,
+    );
+  });
+
+  it('constructs from a valid-looking service account key file', async () => {
+    const file = await plant(
+      'sa.json',
+      JSON.stringify({
+        client_email: 'test@project.iam.gserviceaccount.com',
+        private_key: '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n',
+      }),
+    );
+    // Construction reads the file and succeeds — actual auth happens on
+    // fetchSheet. This is the sync path: credentials arrive by file path.
+    const connector = new GoogleSheetsConnector(file);
     expect(connector).toBeInstanceOf(GoogleSheetsConnector);
   });
 });

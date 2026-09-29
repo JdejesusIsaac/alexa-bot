@@ -1,6 +1,6 @@
 {
-  "version": "2.1.0",
-  "fingerprint": "ecfeffde75600bf36763228ec4ae560d3eb63fa20dae19581392fd5971604604",
+  "version": "2.2.0",
+  "fingerprint": "ea37a21a457e86658afe805ca2215033f7e7fb9115c7e19ed90686fa4cc67168",
   "tools": [
     {
       "name": "lookup_scholar_status",
@@ -136,6 +136,32 @@
         "required": [
           "request_id",
           "decision"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "record_pickup_outcome",
+      "description": "Record the outcome of an approved early pickup — that the scholar was released to their pickup person, or that a released pickup was completed. Use this tool when the front office hands the scholar over. Do not use it to approve or deny a request, to create one, or to look up a scholar’s dismissal status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "release",
+              "complete"
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "outcome"
         ],
         "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"

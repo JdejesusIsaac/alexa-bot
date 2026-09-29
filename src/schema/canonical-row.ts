@@ -31,8 +31,6 @@ export const MAPPABLE_FIELDS = [
   'missing_id',
 ] as const;
 
-export type CanonicalFieldName = (typeof MAPPABLE_FIELDS)[number];
-
 export const canonicalRowSchema = z.object({
   student_ref: z.string().min(1),
   student_name: z.string().min(1),

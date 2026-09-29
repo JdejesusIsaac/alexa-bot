@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import {
   findByStudentName,
@@ -32,26 +32,19 @@ let db: TestDb;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus A'), ($2, 'Campus B')`,
-      [TENANT_A, TENANT_B],
-    );
+  // FORCE RLS binds the owner too — each tenant's seed runs under that
+  // tenant's context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus A'],
+    [TENANT_B, 'Campus B'],
+  ]);
 
-    const syncA = await owner.query(
+  await withTenant(db.ownerPool, TENANT_A, async (owner) => {
+    const syncA = await owner.query<{ id: string }>(
       `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
        values ($1, $2, now(), now(), 2, 2, 'success') returning id`,
       [TENANT_A, SEED_DATE],
     );
-    const syncB = await owner.query(
-      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, $2, now(), now(), 2, 2, 'success') returning id`,
-      [TENANT_B, SEED_DATE],
-    );
-
-    const syncAId = syncA.rows[0]!.id;
-    const syncBId = syncB.rows[0]!.id;
 
     await owner.query(
       `insert into roster_entries
@@ -59,7 +52,15 @@ beforeAll(async () => {
        values
          ($1, $2, 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $3),
          ($1, $2, 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $3)`,
-      [TENANT_A, SEED_DATE, syncAId],
+      [TENANT_A, SEED_DATE, syncA.rows[0]!.id],
+    );
+  });
+
+  await withTenant(db.ownerPool, TENANT_B, async (owner) => {
+    const syncB = await owner.query<{ id: string }>(
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, $2, now(), now(), 2, 2, 'success') returning id`,
+      [TENANT_B, SEED_DATE],
     );
 
     await owner.query(
@@ -68,11 +69,9 @@ beforeAll(async () => {
        values
          ($1, $2, 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $3),
          ($1, $2, 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $3)`,
-      [TENANT_B, SEED_DATE, syncBId],
+      [TENANT_B, SEED_DATE, syncB.rows[0]!.id],
     );
-  } finally {
-    owner.release();
-  }
+  });
 });
 
 afterAll(async () => {

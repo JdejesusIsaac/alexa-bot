@@ -1,12 +1,14 @@
-# test.md — Sprint 4
+# test.md — Sprint 7
 
-> **STATUS: DRAFT.** Drafted during Sprint 3. T-74…T-76 depend on PL-301's observed method list and may need adjusting once the spike reports.
+> **Re-issued 2026-09-29 as Sprint 7.** Drafted as `sprint-4`; the AUTH repair line closed first. Test IDs renumbered T-74…T-83 → **T-92…T-101** — the live suite reached T-91 and the draft's T-75 collided with the decision gate. T-92…T-94 depend on PL-301's permitted-method list (documented set; observed `mcp_audit` rows confirm it at first deploy) and may need adjusting then.
 
-**Carried forward: T-01 … T-73 run every sprint.**
+**Carried forward: T-01 … T-91 run every sprint.**
 
-**The gate:** T-01…T-05, T-33…T-35, T-52, T-60, T-68, **plus T-75.**
+**The gate:** T-01…T-05, T-33…T-35, T-52, T-60, T-68, T-75, T-84, T-87, T-88, T-89 — **plus T-93.**
 
-**What is new about the risk.** Sprint 1: a query missing a filter. Sprint 2: a token that shouldn't work, working. Sprint 3: a scholar leaving without a decision. **Sprint 4: a tenant-less token by design, and a room full of listeners.**
+**Evaluation reports live in `sprint-7/evaluations/`** (Sprint 6 closeout decision) — this file keeps test definitions and the run log only.
+
+**What is new about the risk.** Sprint 1: a query missing a filter. Sprint 2: a token that shouldn't work, working. Sprint 3: a scholar leaving without a decision. **Sprint 7: a tenant-less token by design, and a room full of listeners.**
 
 ---
 
@@ -16,57 +18,57 @@
 
 **Test the room, not the request.** Every previous sprint's disclosure tests asked what a tool returned. On a shared device the question is what was *said*, to a room that may contain a waiting parent. A field can pass `project()` and still be wrong aloud (AD-46). The projection is necessary and no longer sufficient.
 
-**Test across turns, not within one.** AD-17 has been reasoned about since Sprint 2 and never faced a device that restates earlier task state after an interruption. T-80 is the first test of the claim.
+**Test across turns, not within one.** AD-17 has been reasoned about since Sprint 2 and never faced a device that restates earlier task state after an interruption. T-98 is the first test of the claim.
 
-**Measure the budget that always mattered.** Sprint 2's p95 of 2.4 ms was local Postgres, six rows, no network. The 500 ms figure has been cited across four sprints and never measured on the real path. T-81 is the first honest number.
+**Measure the budget that always mattered.** Sprint 2's p95 of 2.4 ms was local Postgres, six rows, no network. The 500 ms figure has been cited across four sprints and never measured on the real path. T-99 is the first honest number.
 
 **Synthetic fixtures extend to the vendor.** "No real student data in this repo" now also means not in the simulator, not on the device, not in a vendor console — surfaces with retention we neither own nor can inspect.
 
 ---
 
-## Service-scope auth — T-74 … T-76
+## Service-scope auth — T-92 … T-94
 
-### T-74 · The Alexa+ handshake completes
+### T-92 · The Alexa+ handshake completes
 
 A `client_credentials` token with `mcp:service` scope against `initialize` and `tools/list`.
 **Pass:** both succeed. All three tools appear in `tools/list`.
 **Fail:** `missing_tenant_claim` — the current behavior, and the reason the add-on cannot connect today (F-20).
 
-### T-75 · A service token reaches no tool and no tenant **(GATE)**
+### T-93 · A service token reaches no tool and no tenant **(GATE)**
 
 Present an `mcp:service` token to `lookup_scholar_status`, `search_roster`, and `roster_sync_status`.
 **Pass:** typed refusal on every one, audited, with no `withTenant` call made and no tenant context established. Assert the absence of the tenant context, not only the refusal.
 **Fail (critical):** any tool executes, or any path resolves a tenant for a service token. Hard-fail 2. AD-44's entire safety argument is that this boundary holds.
 
-### T-76 · A tenant-bearing path still requires a tenant claim
+### T-94 · A tenant-bearing path still requires a tenant claim
 
 A user-level token stripped of its tenant claim, against every data-bearing path.
 **Pass:** `missing_tenant_claim`, exactly as before AD-44. The service branch must not have widened the general case — this is the regression test for Rule 7 itself.
 
 ---
 
-## Alexa+ integration — T-77 … T-78
+## Alexa+ integration — T-95 … T-96
 
-### T-77 · Refusals are audible, not technical
+### T-95 · Refusals are audible, not technical
 
 All four Sprint 1 refusals — stale roster, sync failed, student not found, row quarantined — spoken through the Alexa+ surface.
 **Pass:** each is distinguishable and sounds like speech. A staff member hears "let me get someone for you," never a status code, a field name, or the word "roster."
 
-### T-78 · No tool returns an empty success
+### T-96 · No tool returns an empty success
 
 **Pass:** every path returns either data or a typed refusal, per AD-7 and the design guide's "always return something." Carried forward because the failure mode is worse here: a silent tool on a voice surface is a conversation that dies with no explanation.
 
 ---
 
-## Spoken tier and the room — T-79 … T-80
+## Spoken tier and the room — T-97 … T-98
 
-### T-79 · Nothing outside the spoken tier is voiced **(gate-adjacent)**
+### T-97 · Nothing outside the spoken tier is voiced **(gate-adjacent)**
 
 Plant a sentinel in a field that `project()` clears but the spoken tier excludes. Exercise every voiced path, including refusals and errors.
 **Pass:** the sentinel appears in no voiced output.
 **Fail (critical):** anywhere. AD-46, hard-fail 4. The T-68 sentinel method transfers directly; the output surface is what changed.
 
-### T-80 · Earlier data is not restated to the room
+### T-98 · Earlier data is not restated to the room
 
 Elicit a disclosure, then interrupt, change topic, pause, and return.
 **Pass:** the device does not restate the earlier field unprompted.
@@ -74,20 +76,20 @@ AD-17 has been reasoned about since Sprint 2 and never tested against a device t
 
 ---
 
-## Performance and integrity — T-81 … T-83
+## Performance and integrity — T-99 … T-101
 
-### T-81 · Real-path round trip
+### T-99 · Real-path round trip
 
 Full Alexa+ path: their network, our auth, our tool, our response. Warm **and** cold JWKS, reported separately.
 **Pass:** p95 ≤500 ms, **recorded with its conditions.**
 Four sprints have cited this budget. This is the first measurement of it. A number without conditions does not satisfy E5 — the T-41 lesson.
 
-### T-82 · The published schema matches the registry
+### T-100 · The published schema matches the registry
 
 **Pass:** the deployed `tools/list` matches the Sprint 2 schema registry fingerprint.
 Per AD-45, signatures freeze at publication behind a review cycle — so the fingerprint is a **release gate here**, not the drift detector it was in Sprint 2.
 
-### T-83 · No real student data reaches a vendor surface
+### T-101 · No real student data reaches a vendor surface
 
 Audit the simulator session, the device, and the developer console.
 **Pass:** synthetic fixtures only, everywhere. Hard-fail 6.
@@ -95,7 +97,7 @@ Rule 6 has been enforced by repo hooks since Sprint 1. Those hooks cannot see a 
 
 ---
 
-## Adversarial pass — Sprint 4
+## Adversarial pass — Sprint 7
 
 - Reach a tool with a service-level token
 - Establish a tenant context from a token with no tenant claim
@@ -118,7 +120,7 @@ Rule 6 has been enforced by repo hooks since Sprint 1. Those hooks cannot see a 
 | ---- | --------- | ------ | ---------- |
 |      |           |        |            |
 
-For T-81 record the network path, warm vs cold, and time of day. For T-80 record who else was in the room — a test run in an empty office is not a test of the room.
+For T-99 record the network path, warm vs cold, and time of day. For T-98 record who else was in the room — a test run in an empty office is not a test of the room.
 
 ---
 

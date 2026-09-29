@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import {
   createPickupRequest,
@@ -15,6 +15,7 @@ import {
   type TransitionResult,
 } from '../src/repositories/pickup-requests.js';
 import { upsertStudent } from '../src/repositories/students.js';
+import { insertStaffIdentity } from '../src/repositories/staff-identities.js';
 import { todayServiceDate } from '../src/util/service-date.js';
 import { TENANT_A, TENANT_B } from '../src/fixtures/synthetic-data.js';
 
@@ -50,19 +51,22 @@ const PAST_DATE = '2020-01-02';
 let db: TestDb;
 let studentA: string;
 let studentB: string;
+// The assigned approver per tenant (PL-251): decisions are legal only
+// from the request's assigned staff identity, and the creator is never
+// the decider — the route actor is deliberately a different subject.
+let approverA: { id: string; subject: string };
+let approverB: { id: string; subject: string };
+const CREATOR_SUBJECT = 'lc-coordinator@synthetic.test';
 
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-  } finally {
-    owner.release();
-  }
+  // FORCE RLS binds the owner too — each tenant row enters under its
+  // own context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
 
   studentA = await withTenant(db.appPool, TENANT_A, async (client) => {
     const s = await upsertStudent(client, {
@@ -80,6 +84,21 @@ beforeAll(async () => {
     });
     return s.id;
   });
+
+  approverA = await withTenant(db.appPool, TENANT_A, async (client) =>
+    insertStaffIdentity(client, {
+      slackUserId: 'U_LC_APPROVER_A',
+      subject: 'lc-approver-a@synthetic.test',
+      role: 'staff',
+    }),
+  );
+  approverB = await withTenant(db.appPool, TENANT_B, async (client) =>
+    insertStaffIdentity(client, {
+      slackUserId: 'U_LC_APPROVER_B',
+      subject: 'lc-approver-b@synthetic.test',
+      role: 'staff',
+    }),
+  );
 });
 
 afterAll(async () => {
@@ -116,12 +135,21 @@ async function drive(
   action: PickupRequestAction,
   options: { tenantId?: string; escalateAt?: Date } = {},
 ): Promise<TransitionResult> {
-  return withTenant(db.appPool, options.tenantId ?? TENANT_A, async (client) =>
+  const tenantId = options.tenantId ?? TENANT_A;
+  const approver = tenantId === TENANT_A ? approverA : approverB;
+  const isDecision =
+    action === 'approve' || action === 'flag' || action === 'deny';
+  return withTenant(db.appPool, tenantId, async (client) =>
     transitionPickupRequest(client, {
       requestId,
       action,
-      actor: 'test-actor',
+      // Decisions arrive as the assigned approver's subject carrying its
+      // resolved identity (PL-251); routing/system actions stay under the
+      // creator or the system — never the same subject as the decider.
+      actor: isDecision ? approver.subject : CREATOR_SUBJECT,
       escalateAt: options.escalateAt ?? new Date('2030-03-15T20:00:00Z'),
+      ...(action === 'route' ? { assignedApproverId: approver.id } : {}),
+      ...(isDecision ? { actorIdentityId: approver.id } : {}),
     }),
   );
 }
@@ -205,9 +233,16 @@ describe('PL-202 · T-53: illegal transition refused', () => {
     const request = await makeRequest(TENANT_A, studentA);
 
     const result = await drive(request.id, 'approve');
+    // Since PL-274 (B-1's reorder), a decision authorizes BEFORE its
+    // state is classified — that ordering is what stops an idempotent
+    // replay from returning a success shape to a non-assignee. On a
+    // draft there is no assigned approver, so any decider is refused
+    // as not the assignee; the refusal names the actor's standing, not
+    // the machine's state. Still typed, still no state change, still
+    // ledgered.
     expect(result).toEqual({
       ok: false,
-      code: 'illegal_transition',
+      code: 'not_assigned_approver',
       from: 'draft',
       action: 'approve',
     });
@@ -291,7 +326,7 @@ describe('PL-202 · T-54: transition idempotent on an already-decided request', 
       findPickupRequestById(client, request.id),
     );
     expect(after!.decided_at).toEqual(before!.decided_at);
-    expect(after!.decided_by).toBe('test-actor');
+    expect(after!.decided_by).toBe(approverA.subject);
 
     // No second decision event.
     const eventsAfter = await eventsFor(request.id);
@@ -337,18 +372,23 @@ describe('PL-202 · T-55 (structural): state written only through the transition
         path.resolve(file) ===
         path.resolve(SRC_ROOT, 'repositories', 'pickup-requests.ts')
       ) {
-        // Exactly two writers live in the transition module:
+        // Exactly three writers live in the transition module:
         //  1. applyTransition — the private arm of transitionPickupRequest,
         //     the only place `state` is written.
         //  2. purgeStaleReasonDetail — the P3 retention sweep, which sets
         //     reason_detail only and never touches state.
-        expect(matches.length).toBe(2);
+        //  3. deferRow (inside processDueEscalations, PL-254) — the queue
+        //     deferral: SETs escalation_attempts and escalate_at only;
+        //     its `state = 'routed'` is a WHERE guard, never a write.
+        expect(matches.length).toBe(3);
         const applyStart = content.indexOf('async function applyTransition');
         const purgeStart = content.indexOf(
           'export async function purgeStaleReasonDetail',
         );
+        const deferStart = content.indexOf('const deferRow');
         expect(applyStart).toBeGreaterThan(-1);
         expect(purgeStart).toBeGreaterThan(applyStart);
+        expect(deferStart).toBeGreaterThan(purgeStart);
 
         const positions = [...content.matchAll(/update\s+pickup_requests/gi)].map(
           (m) => m.index!,
@@ -358,7 +398,8 @@ describe('PL-202 · T-55 (structural): state written only through the transition
         expect(positions[0]!).toBeLessThan(purgeStart);
         // The sweep sits after it and sets reason_detail only.
         expect(positions[1]!).toBeGreaterThan(purgeStart);
-        const purgeBody = content.slice(purgeStart);
+        expect(positions[1]!).toBeLessThan(deferStart);
+        const purgeBody = content.slice(purgeStart, deferStart);
         expect(
           purgeBody.match(/update\s+pickup_requests\s+set\s+reason_detail\s*=\s*null/i),
         ).not.toBeNull();
@@ -366,6 +407,20 @@ describe('PL-202 · T-55 (structural): state written only through the transition
         // it (`where pr.state = 'routed'` in the queue), writes may not.
         // The write shape is a SET clause reaching `state =`.
         expect(purgeBody.match(/\bset\b[\s\S]{0,200}?\bstate\s*=/i)).toBeNull();
+        // The deferral writes queue fields and only queue fields — the
+        // `state = 'routed'` in its WHERE clause is the guard that keeps
+        // a stalled/decided row from being re-armed.
+        const deferBody = content.slice(deferStart);
+        expect(
+          deferBody.match(
+            /update\s+pickup_requests\s+set\s+escalation_attempts\s*=\s*escalation_attempts/i,
+          ),
+        ).not.toBeNull();
+        const deferSetClause = deferBody.slice(
+          deferBody.search(/update\s+pickup_requests\s+set/i),
+          deferBody.search(/\bwhere\b/i),
+        );
+        expect(deferSetClause.match(/\bstate\s*=/i)).toBeNull();
         // applyTransition is module-private — only the chokepoint can
         // reach the state writer.
         expect(
@@ -392,7 +447,7 @@ describe('PL-202 · T-55 (structural): state written only through the transition
     // written only through the chokepoint callback).
     for (const name of exports) {
       expect(name).toMatch(
-        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail|listPendingApprovalsForApprover|findPickupRequestTenant|processDueEscalations)$/,
+        /^(createPickupRequest|findPickupRequestById|insertPickupRequestEvent|getReasonDetailRetentionDays|transitionPickupRequest|purgeStaleReasonDetail|listPendingApprovalsForApprover|pickupRequestBelongsToTenant|processDueEscalations)$/,
       );
     }
   });
@@ -532,16 +587,14 @@ describe('PL-202 · P3: reason_detail purged per the retention decision', () => 
   });
 
   it('a widened per-tenant retention keeps reason_detail at terminal state', async () => {
-    // Tenant B widens retention to 30 days — a config row, not a migration.
-    const owner = await db.ownerPool.connect();
-    try {
+    // Tenant B widens retention to 30 days — a config row, not a
+    // migration. Written as the owner under B's context (B-12).
+    await withTenant(db.ownerPool, TENANT_B, async (owner) => {
       await owner.query(
         `insert into tenant_settings (tenant_id, reason_detail_retention_days) values ($1, 30)`,
         [TENANT_B],
       );
-    } finally {
-      owner.release();
-    }
+    });
 
     const request = await makeRequest(TENANT_B, studentB);
     await driveTo(request.id, 'denied', { tenantId: TENANT_B });

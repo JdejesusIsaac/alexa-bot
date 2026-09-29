@@ -51,9 +51,15 @@ import {
   DECIDE_PICKUP_REQUEST_INPUT,
   handleDecidePickupRequest,
 } from './tools/decide-pickup-request.js';
+import {
+  RECORD_PICKUP_OUTCOME_NAME,
+  RECORD_PICKUP_OUTCOME_DESCRIPTION,
+  RECORD_PICKUP_OUTCOME_INPUT,
+  handleRecordPickupOutcome,
+} from './tools/record-pickup-outcome.js';
 
 export const SERVER_NAME = 'parent-line';
-export const SERVER_VERSION = '2.1.0';
+export const SERVER_VERSION = '2.2.0';
 
 /**
  * Registered tool names. The HTTP boundary uses this to distinguish a
@@ -67,6 +73,7 @@ export const TOOL_NAMES: ReadonlySet<string> = new Set([
   CREATE_PICKUP_REQUEST_NAME,
   LIST_PENDING_APPROVALS_NAME,
   DECIDE_PICKUP_REQUEST_NAME,
+  RECORD_PICKUP_OUTCOME_NAME,
 ]);
 
 type RawToolHandler = (rawArgs: unknown, extra: unknown) => Promise<LookupResult>;
@@ -175,6 +182,17 @@ export function createMcpServer(deps: ToolDeps): McpServer {
     },
     audited(DECIDE_PICKUP_REQUEST_NAME, (args, extra) =>
       handleDecidePickupRequest(args, extra, deps),
+    ),
+  );
+
+  server.registerTool(
+    RECORD_PICKUP_OUTCOME_NAME,
+    {
+      description: RECORD_PICKUP_OUTCOME_DESCRIPTION,
+      inputSchema: RECORD_PICKUP_OUTCOME_INPUT,
+    },
+    audited(RECORD_PICKUP_OUTCOME_NAME, (args, extra) =>
+      handleRecordPickupOutcome(args, extra, deps),
     ),
   );
 

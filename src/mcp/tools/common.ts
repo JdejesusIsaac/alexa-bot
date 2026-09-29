@@ -11,10 +11,10 @@
  */
 
 import { type Pool } from 'pg';
-import { z } from 'zod';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import { type AuthedIdentity } from '../../auth/identity.js';
 import { type Logger } from '../../logging/logger.js';
+import { type PickupNotifier } from '../../services/pickup-notification.js';
 
 /**
  * What a handler leaves behind for the boundary's audit row (AD-42).
@@ -52,6 +52,22 @@ export interface ToolDeps {
   readonly appPool: Pool;
   readonly rosterFreshnessMinutes: number;
   readonly logger: Logger;
+  /**
+   * The outbound Slack surface (PL-252). Optional: absent Slack config,
+   * notifications are skipped with a log line and every transition is
+   * unaffected — the system works without the channel.
+   */
+  readonly pickupNotifier?: PickupNotifier;
+  /**
+   * Per-tenant level-0 clocks (PL-253/254): keyed by tenant id, loaded
+   * from `ESCALATION_LADDER_DIR` — the same written ladders the worker
+   * climbs, so a tenant's initial deadline is ITS policy. A tenant with
+   * no entry falls back to `escalate_at = pickup_at` with an
+   * `initial_clock_unconfigured` warning.
+   */
+  readonly escalationLadders?: Readonly<
+    Record<string, { readonly initialMinutes: number }>
+  >;
 }
 
 /**
@@ -73,9 +89,6 @@ export function requireRequestMeta(extra: unknown): RequestMeta {
   }
   return meta as RequestMeta;
 }
-
-/** Zod raw shape for tools that take no arguments. */
-export const NO_ARGS: Readonly<Record<string, z.ZodType>> = {};
 
 /**
  * Customer-facing refusal copy (AD-16, AD-7). Degrade to a human, never
@@ -102,4 +115,10 @@ export const REFUSAL_COPY: Readonly<Record<string, string>> = {
     'No pickup request matches that ID. Double-check the ID, or check the pending list for today\u2019s requests.',
   illegal_transition:
     'That request is not in a state where this action is possible — it may already have been decided. Check the pending list or the front office.',
+  unmapped_actor:
+    'Your account is not registered as staff for this campus. Please check with the front office.',
+  not_assigned_approver:
+    'That request is assigned to a different approver. Check your pending list for the requests routed to you.',
+  self_approval:
+    'A request you submitted cannot be decided by you — it will escalate to another approver. Check with the front office if it is urgent.',
 };

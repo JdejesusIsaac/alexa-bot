@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 import { runSync, type SyncJob } from '../src/sync/scheduler.js';
 import { FixtureSheetConnector } from '../src/connector/fixture-sheet-connector.js';
@@ -36,39 +36,30 @@ let db: TestDb;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  const owner = await db.ownerPool.connect();
-  try {
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus Alpha'), ($2, 'Campus Bravo')`,
-      [TENANT_A, TENANT_B],
-    );
-
-    for (const m of TENANT_A_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_A, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const m of TENANT_B_MAPPINGS) {
-      await owner.query(
-        `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
-        [TENANT_B, m.sheetHeader, m.canonicalField],
-      );
-    }
-    for (const r of TENANT_A_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_A, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-    for (const r of TENANT_B_DERIVATION_RULES) {
-      await owner.query(
-        `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
-        [TENANT_B, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
-      );
-    }
-  } finally {
-    owner.release();
+  // FORCE RLS binds the owner too — each tenant seeds under its own
+  // context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus Alpha'],
+    [TENANT_B, 'Campus Bravo'],
+  ]);
+  for (const [tenantId, mappings, rules] of [
+    [TENANT_A, TENANT_A_MAPPINGS, TENANT_A_DERIVATION_RULES],
+    [TENANT_B, TENANT_B_MAPPINGS, TENANT_B_DERIVATION_RULES],
+  ] as const) {
+    await withTenant(db.ownerPool, tenantId, async (owner) => {
+      for (const m of mappings) {
+        await owner.query(
+          `insert into column_mappings (tenant_id, sheet_header, canonical_field) values ($1, $2, $3)`,
+          [tenantId, m.sheetHeader, m.canonicalField],
+        );
+      }
+      for (const r of rules) {
+        await owner.query(
+          `insert into derivation_rules (tenant_id, rule_name, condition_column, condition_value, derived_hold_type) values ($1, $2, $3, $4, $5)`,
+          [tenantId, r.ruleName, r.conditionColumn, r.conditionValue, r.derivedHoldType],
+        );
+      }
+    });
   }
 
   // Sync both tenants so both have fresh rosters.

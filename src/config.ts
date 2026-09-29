@@ -10,9 +10,11 @@ import { z } from 'zod';
  *    passed in (rule 7).
  *
  * 2. Two database URLs. Migrations run as an owner role; the application
- *    connects as a NON-owner, NON-superuser role. Table owners bypass RLS
- *    silently, so collapsing these into one connection string would make
- *    the entire isolation gate vacuous (AD-11, T-05).
+ *    connects as a NON-owner, NON-superuser role. An owner can disable
+ *    or drop the RLS policies outright — and bypasses them silently on
+ *    any table where FORCE is missing — so collapsing these into one
+ *    connection string would make the isolation gate vacuous (AD-11,
+ *    T-05).
  */
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -33,8 +35,14 @@ const schema = z.object({
 
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
-  /** Google service account JSON for the Sheets connector (PL-005). Optional — connector is dormant until provided. */
-  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  /**
+   * Path to the Google service account key file for the Sheets connector
+   * (PL-005) — e.g. `./secrets/sa.json`, a gitignored file. Never the key
+   * itself: a secret in an environment variable is a leak waiting to be
+   * listed (it broke `source .env`, then printed a private key — F-8).
+   * Optional — the connector is dormant until provided.
+   */
+  GOOGLE_SERVICE_ACCOUNT_FILE: z.string().optional(),
 
   /** Default roster sheet ID for scheduled sync (PL-007). Optional until sheets are configured. */
   ROSTER_SHEET_ID: z.string().optional(),
@@ -118,6 +126,28 @@ const schema = z.object({
   SLACK_SIGNING_SECRET: z.string().default(''),
 
   /**
+   * Tenant list for the Slack interaction endpoint (PL-257). A
+   * block-action payload carries no tenant claim — the request's tenant
+   * is resolved by probing each configured tenant with the membership
+   * function, ALL of them, so the probe count is constant whether the
+   * id exists or not (the timing side channel is the feature T-66
+   * cannot close without this). Comma-separated tenant ids.
+   */
+  SLACK_TENANT_IDS: z.string().default(''),
+
+  /**
+   * Outbound Slack surface (PL-252). All three must be set for pickup
+   * notifications to send; absent any one, requests route and decide
+   * normally and notifications are skipped — the system works without
+   * the channel. `SLACK_BOT_TOKEN` is a credential: never logged.
+   */
+  SLACK_BOT_TOKEN: z.string().default(''),
+  /** The leadership visibility channel for low-detail thread posts. */
+  SLACK_VISIBILITY_CHANNEL: z.string().default(''),
+  /** The review link base the approver follows from the DM. */
+  PICKUP_REVIEW_URL: z.string().default(''),
+
+  /**
    * Proactive JWKS refresh interval (PL-113, E3). The server refetches
    * keys on this cadence — off the request path — so a request never
    * pays the cold fetch after deploy or AS key rotation.
@@ -131,7 +161,7 @@ export type Config = Readonly<{
   appDatabaseUrl: string;
   rosterFreshnessMinutes: number;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
-  googleServiceAccountJson: string | undefined;
+  googleServiceAccountFile: string | undefined;
   rosterSheetId: string | undefined;
   mcpHost: string;
   mcpPort: number;
@@ -148,6 +178,10 @@ export type Config = Readonly<{
   sessionTtlMinutes: number;
   jwksRefreshMinutes: number;
   slackSigningSecret: string;
+  slackTenantIds: readonly string[];
+  slackBotToken: string;
+  slackVisibilityChannel: string;
+  pickupReviewUrl: string;
 }>;
 
 export class ConfigError extends Error {
@@ -170,7 +204,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   if (raw.NODE_ENV === 'production' && raw.APP_DATABASE_URL === undefined) {
     throw new ConfigError(
-      'APP_DATABASE_URL is required in production: the application must not connect as the table owner, because owners bypass RLS silently',
+      'APP_DATABASE_URL is required in production: the application must not connect as the table owner — an owner can disable or drop the RLS policies (and bypasses them silently where FORCE is absent)',
     );
   }
 
@@ -199,7 +233,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appDatabaseUrl: raw.APP_DATABASE_URL ?? raw.DATABASE_URL,
     rosterFreshnessMinutes: raw.ROSTER_FRESHNESS_MINUTES,
     logLevel: raw.LOG_LEVEL,
-    googleServiceAccountJson: raw.GOOGLE_SERVICE_ACCOUNT_JSON,
+    googleServiceAccountFile: raw.GOOGLE_SERVICE_ACCOUNT_FILE,
     rosterSheetId: raw.ROSTER_SHEET_ID,
     mcpHost: raw.MCP_HOST,
     mcpPort: raw.MCP_PORT,
@@ -221,5 +255,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlMinutes: raw.SESSION_TTL_MINUTES,
     jwksRefreshMinutes: raw.JWKS_REFRESH_MINUTES,
     slackSigningSecret: raw.SLACK_SIGNING_SECRET,
+    slackTenantIds: Object.freeze(
+      raw.SLACK_TENANT_IDS.split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    ),
+    slackBotToken: raw.SLACK_BOT_TOKEN,
+    slackVisibilityChannel: raw.SLACK_VISIBILITY_CHANNEL,
+    pickupReviewUrl: raw.PICKUP_REVIEW_URL,
   });
 }

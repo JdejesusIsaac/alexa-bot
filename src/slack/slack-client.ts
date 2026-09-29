@@ -23,6 +23,13 @@ export interface SlackMessage {
   readonly text: string;
   /** Reply inside a thread instead of posting top-level. */
   readonly threadTs?: string;
+  /**
+   * Block Kit blocks (PL-252). The notification builder owns the shape;
+   * the client serializes it verbatim. The same payload discipline as
+   * `text` applies — the allowlist is scholar name, pickup time, link,
+   * request id (the approve button's `value`).
+   */
+  readonly blocks?: readonly Record<string, unknown>[];
 }
 
 export type SlackPostResult = { ok: true; ts: string } | { ok: false; error: string };

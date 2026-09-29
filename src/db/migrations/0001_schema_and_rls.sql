@@ -2,7 +2,8 @@
 --
 -- Nine tables with tenant_id on every student-data table. RLS enabled AND
 -- forced. The application role (parentline_app) is neither superuser nor
--- table owner — owners bypass RLS silently (AD-11, T-05).
+-- table owner — an owner can disable or drop the policies outright, and
+-- bypasses them silently wherever FORCE is missing (AD-11, T-05).
 --
 -- RLS policy: tenant_id = current_setting('app.tenant_id')::uuid
 -- No missing_ok — an unset session variable errors rather than returning

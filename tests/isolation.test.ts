@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestDb } from './helpers/db.js';
-import { provisionTestDb } from './helpers/db.js';
+import { provisionTestDb, seedTenants } from './helpers/db.js';
 import { withTenant } from '../src/db/tenant-context.js';
 
 /**
@@ -40,33 +40,22 @@ let db: TestDb;
 beforeAll(async () => {
   db = await provisionTestDb();
 
-  // Seed two tenants with colliding student names.
-  // Owner pool is a superuser — bypasses RLS for seeding.
-  const owner = await db.ownerPool.connect();
-  try {
-    // Tenants
-    await owner.query(
-      `insert into tenants (id, name) values ($1, 'Campus A'), ($2, 'Campus B')`,
-      [TENANT_A, TENANT_B],
-    );
+  // Seed two tenants with colliding student names. Seeding runs as the
+  // owner — but FORCE RLS binds the owner too, so every tenant-scoped
+  // insert runs under that tenant's context (B-12).
+  await seedTenants(db.ownerPool, [
+    [TENANT_A, 'Campus A'],
+    [TENANT_B, 'Campus B'],
+  ]);
 
-    // Sync records (required FK for roster_entries) — a fixed service date
-    const syncA = await owner.query(
+  await withTenant(db.ownerPool, TENANT_A, async (owner) => {
+    // Sync record (required FK for roster_entries) — a fixed service date
+    const syncA = await owner.query<{ id: string }>(
       `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
        values ($1, '2030-03-15', now(), now(), 3, 3, 'success') returning id`,
       [TENANT_A],
     );
-    const syncB = await owner.query(
-      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
-       values ($1, '2030-03-15', now(), now(), 3, 3, 'success') returning id`,
-      [TENANT_B],
-    );
 
-    const syncAId = syncA.rows[0]!.id;
-    const syncBId = syncB.rows[0]!.id;
-
-    // Roster entries — deliberately colliding "Daniel Reyes" across tenants
-    // with different statuses, so a cross-tenant leak is visible.
     await owner.query(
       `insert into roster_entries
          (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
@@ -74,9 +63,19 @@ beforeAll(async () => {
          ($1, '2030-03-15', 'A001', 'Daniel Reyes', '101', 'Tardy',   'derived',      1, $2),
          ($1, '2030-03-15', 'A002', 'Sarah Chen',   '101', 'Present', 'authoritative', 2, $2),
          ($1, '2030-03-15', 'A003', 'James Park',   '102', 'Absent',  'authoritative', 3, $2)`,
-      [TENANT_A, syncAId],
+      [TENANT_A, syncA.rows[0]!.id],
+    );
+  });
+
+  await withTenant(db.ownerPool, TENANT_B, async (owner) => {
+    const syncB = await owner.query<{ id: string }>(
+      `insert into roster_syncs (tenant_id, service_date, started_at, finished_at, rows_in, rows_valid, outcome)
+       values ($1, '2030-03-15', now(), now(), 3, 3, 'success') returning id`,
+      [TENANT_B],
     );
 
+    // Tenant B's own "Daniel Reyes" — the deliberate collision, with a
+    // different status so a cross-tenant leak is visible.
     await owner.query(
       `insert into roster_entries
          (tenant_id, service_date, student_ref, student_name, section, attendance_status, hold_source, source_row_number, sync_id)
@@ -84,11 +83,9 @@ beforeAll(async () => {
          ($1, '2030-03-15', 'B001', 'Daniel Reyes', '201', 'Absent',  'authoritative', 1, $2),
          ($1, '2030-03-15', 'B002', 'Maria Lopez',   '201', 'Excused', 'authoritative', 2, $2),
          ($1, '2030-03-15', 'B003', 'Kevin Wright',  '202', 'Present', 'authoritative', 3, $2)`,
-      [TENANT_B, syncBId],
+      [TENANT_B, syncB.rows[0]!.id],
     );
-  } finally {
-    owner.release();
-  }
+  });
 });
 
 afterAll(async () => {
@@ -137,7 +134,7 @@ describe('T-05 · Application role cannot bypass RLS', () => {
       expect(res.rows.length, `table ${table} should exist`).toBe(1);
       expect(
         res.rows[0]!.relowner,
-        `parentline_app must not own table ${table} — owners bypass RLS`,
+        `parentline_app must not own table ${table} — an owner can disable or drop its RLS policies`,
       ).not.toBe(appRoleOid);
     }
   });

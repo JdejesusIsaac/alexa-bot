@@ -22,24 +22,29 @@ alter table roster_entries add column service_date date;
 -- ── Backfill ──────────────────────────────────────────────────────────
 --
 -- Existing rows take the service date of the sync that wrote them.
--- RLS is disabled for each backfill and restored immediately after:
--- migrations run as the table owner, FORCE ROW LEVEL SECURITY subjects
--- the owner to the tenant policy, and there is no app.tenant_id set in
--- a maintenance context. Fresh databases have no rows — these updates
--- are no-ops there.
+-- RLS is disabled on BOTH tables for the whole backfill and restored
+-- after, not between the two updates: the entries backfill joins
+-- roster_syncs, and a forced policy there evaluates
+-- current_setting('app.tenant_id'), which is unset in a maintenance
+-- context — a non-superuser owner gets "unrecognized configuration
+-- parameter" where a superuser silently skips RLS (B-10). Migrations
+-- run as the table owner; FORCE ROW LEVEL SECURITY subjects the owner
+-- to the tenant policy. Fresh databases have no rows — these updates
+-- are no-ops there, but the policy is evaluated either way.
 
-alter table roster_syncs disable row level security;
-update roster_syncs set service_date = started_at::date where service_date is null;
-alter table roster_syncs enable row level security;
-alter table roster_syncs force row level security;
-
+alter table roster_syncs   disable row level security;
 alter table roster_entries disable row level security;
+
+update roster_syncs set service_date = started_at::date where service_date is null;
 update roster_entries re
   set service_date = rs.started_at::date
   from roster_syncs rs
   where re.sync_id = rs.id and re.service_date is null;
+
+alter table roster_syncs   enable row level security;
+alter table roster_syncs   force  row level security;
 alter table roster_entries enable row level security;
-alter table roster_entries force row level security;
+alter table roster_entries force  row level security;
 
 -- ── Constrain ─────────────────────────────────────────────────────────
 
